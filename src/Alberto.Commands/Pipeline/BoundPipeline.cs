@@ -45,7 +45,7 @@ public readonly struct BoundPipeline<TCommand, TState>
                 () => decide(staged.Command, state),
                 d => d.IsError ? d.Problems : null);
             return (decision, boundary);
-        }, typeof(TCommand).Name);
+        }, CommandName<TCommand>.Value);
     }
 
     /// <inheritdoc cref="Decide(Func{TCommand, TState, Decision})"/>
@@ -70,7 +70,7 @@ public readonly struct BoundPipeline<TCommand, TState>
                 () => decide(staged.Command, state),
                 d => d.IsError ? d.Problems : null);
             return (decision, boundary);
-        }, typeof(TCommand).Name);
+        }, CommandName<TCommand>.Value);
     }
 
     /// <inheritdoc cref="Decide(Func{TCommand, TState, Decision})"/>
