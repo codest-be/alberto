@@ -345,7 +345,7 @@ yourself.
 | `append {module}` | Producer | A write, from boundary check to commit. `alberto.events.count`, `alberto.events.first_position`/`last_position`, `alberto.dcb.conflict` on a conflict, `db.system.name` on Postgres only. One `alberto.event.appending` event per event: `alberto.event.id`, `alberto.event.type`, `alberto.event.tags` |
 | `process {processorId}` | Consumer | One event, or one batch, through the middleware chain |
 | `send {MessageType}` | Producer | One outbox publish attempt |
-| `alberto.command {CommandType}` | Internal | One command's `Commit`/`TryCommit`; `alberto.command.outcome` is `committed`, `rejected`, `conflict` (retries used up) or `error`; `alberto.command.attempt` is the attempt reached |
+| `alberto.command {CommandType}` | Internal | One command's `Commit`/`TryCommit`. `{CommandType}` (also the `alberto.command.type` tag) is the command type's name; for an anonymous command it is its member names instead, as `{ clientId, therapistId }`, never their values; `alberto.command.outcome` is `committed`, `rejected`, `conflict` (retries used up) or `error`; `alberto.command.attempt` is the attempt reached |
 | `alberto.load` | Internal | The boundary read of an attempt: `alberto.load.events`, `.position`, `.types`, `.tags` |
 | `alberto.decide` | Internal | The decision of an attempt: `alberto.decide.outcome`, `alberto.problem.codes` on rejection |
 | `alberto.read` | Client / Internal | A read from the event store: `alberto.read.after_position`, `.limit`, `.events`; `db.system.name` (and kind Client) only on Postgres |

@@ -88,6 +88,12 @@ public sealed class CommandSpanTests
             }
         }
 
+        public List<Activity> Roots(string operationName)
+        {
+            lock (_stopped)
+                return _stopped.Where(a => a.OperationName == operationName).ToList();
+        }
+
         public void Dispose() => _listener.Dispose();
     }
 
@@ -119,6 +125,8 @@ public sealed class CommandSpanTests
         var read = Single(trace, "alberto.read");
 
         Assert.Null(root.Parent);
+        Assert.Equal("alberto.command ConfirmCommand", root.OperationName);
+        Assert.Equal(nameof(ConfirmCommand), root.GetTagItem("alberto.command.type"));
         Assert.Equal(ActivityKind.Internal, root.Kind);
         Assert.Equal("committed", root.GetTagItem("alberto.command.outcome"));
         Assert.Equal(1, root.GetTagItem("alberto.command.attempt"));
@@ -217,5 +225,35 @@ public sealed class CommandSpanTests
         Assert.Equal(ActivityStatusCode.Error, root.Status);
         Assert.Null(root.StatusDescription);
         Assert.Equal(typeof(DcbConflictException).FullName, root.GetTagItem("error.type"));
+    }
+
+    /// <summary>Shaped like a consumer's shared command helper: it re-wraps the decider in its own lambda.</summary>
+    private static Task<Result> Run<TCommand>(AlbertoStore store, TCommand command, Guid id, Func<int, Decision> decide)
+        where TCommand : notnull =>
+        store.Handle(command)
+            .Load(Boundary(id), 0, Folded)
+            .Decide((_, state) => decide(state))
+            .Commit(TestContext.Current.CancellationToken);
+
+    [Fact]
+    public async Task An_anonymous_command_is_named_after_its_member_names_never_their_values()
+    {
+        using var harness = new Harness();
+        var id = Guid.NewGuid();
+        Decision Confirm(int _) => Decision.Succeed(new Confirmed { OrderId = id });
+
+        await Run(harness.Store, new { OrderId = id, Note = "clinical detail" }, id, Confirm);
+        await Run(harness.Store, new { OrderId = id }, id, Confirm);
+        await harness.Store.Handle(new { OrderId = id, started = true })
+            .Decide(c => Decision.Succeed(new Confirmed { OrderId = c.OrderId }))
+            .CommitUnconditionally(TestContext.Current.CancellationToken);
+
+        foreach (var name in new[] { "{ OrderId, Note }", "{ OrderId }", "{ OrderId, started }" })
+        {
+            var root = Single(harness.Roots($"alberto.command {name}"), "alberto.command");
+            Assert.Equal(name, root.GetTagItem("alberto.command.type"));
+            Assert.DoesNotContain(id.ToString(), root.DisplayName);
+            Assert.DoesNotContain("clinical", root.DisplayName);
+        }
     }
 }
