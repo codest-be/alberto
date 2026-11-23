@@ -1,6 +1,5 @@
 using Alberto.Configuration;
 using Alberto.Postgres;
-using FluentAssertions;
 using Npgsql;
 using Xunit;
 
@@ -16,10 +15,10 @@ public sealed class SchemaQualifierTests
     {
         var qualifier = new SchemaQualifier(schema);
 
-        qualifier.Name.Should().Be("public");
-        qualifier.HasSchema.Should().BeFalse();
-        qualifier.Table("alberto_events").Should().Be("alberto_events");
-        qualifier.Function("alberto_append_events").Should().Be("alberto_append_events");
+        Assert.Equal("public", qualifier.Name);
+        Assert.False(qualifier.HasSchema);
+        Assert.Equal("alberto_events", qualifier.Table("alberto_events"));
+        Assert.Equal("alberto_append_events", qualifier.Function("alberto_append_events"));
     }
 
     [Fact]
@@ -27,11 +26,11 @@ public sealed class SchemaQualifierTests
     {
         var qualifier = new SchemaQualifier("orders_v2");
 
-        qualifier.Name.Should().Be("orders_v2");
-        qualifier.HasSchema.Should().BeTrue();
-        qualifier.Prefix.Should().Be("\"orders_v2\".");
-        qualifier.Table("alberto_events").Should().Be("\"orders_v2\".alberto_events");
-        qualifier.Function("alberto_append_events").Should().Be("\"orders_v2\".alberto_append_events");
+        Assert.Equal("orders_v2", qualifier.Name);
+        Assert.True(qualifier.HasSchema);
+        Assert.Equal("\"orders_v2\".", qualifier.Prefix);
+        Assert.Equal("\"orders_v2\".alberto_events", qualifier.Table("alberto_events"));
+        Assert.Equal("\"orders_v2\".alberto_append_events", qualifier.Function("alberto_append_events"));
     }
 
     [Fact]
@@ -41,7 +40,7 @@ public sealed class SchemaQualifierTests
 
         var qualifier = new SchemaQualifier(schema);
 
-        qualifier.Name.Should().Be(schema);
+        Assert.Equal(schema, qualifier.Name);
     }
 
     [Theory]
@@ -58,8 +57,8 @@ public sealed class SchemaQualifierTests
 
         var act = () => new PostgresCheckpointStore(dataSource, schema);
 
-        act.Should().Throw<ArgumentException>()
-            .WithParameterName("schema");
+        var exception = Assert.ThrowsAny<ArgumentException>(act);
+        Assert.Equal("schema", exception.ParamName);
     }
 
     [Fact]
@@ -67,7 +66,7 @@ public sealed class SchemaQualifierTests
     {
         var act = () => new SchemaQualifier("a" + new string('0', 63));
 
-        act.Should().Throw<ArgumentException>();
+        Assert.ThrowsAny<ArgumentException>(act);
     }
 
     [Fact]
@@ -85,8 +84,7 @@ public sealed class SchemaQualifierTests
             Backend = descriptor,
         };
 
-        new AlbertoModuleValidator()
-            .Collect(definition)
-            .Should().ContainSingle(failure => failure.Code == "ALB1005");
+        Assert.Single(new AlbertoModuleValidator()
+            .Collect(definition), failure => failure.Code == "ALB1005");
     }
 }

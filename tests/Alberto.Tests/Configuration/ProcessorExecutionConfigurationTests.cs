@@ -1,7 +1,6 @@
 using Alberto.Configuration;
 using Alberto.InMemory;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -47,13 +46,13 @@ public class ProcessorExecutionConfigurationTests
 
         var result = AlbertoModuleDefinition.ApplyConfiguration(definition, configuration);
 
-        result.Processors.Single(p => p.ProcessorId == "send-email")
-            .Execution.MaxConcurrency.Should().Be(4,
-                "config supplied MaxConcurrency = 4 for send-email");
+        // config supplied MaxConcurrency = 4 for send-email
+        Assert.Equal(4, result.Processors.Single(p => p.ProcessorId == "send-email")
+            .Execution.MaxConcurrency);
 
-        result.Processors.Single(p => p.ProcessorId == "send-sms")
-            .Execution.MaxConcurrency.Should().Be(1,
-                "send-sms was not mentioned in config and must be unchanged");
+        // send-sms was not mentioned in config and must be unchanged
+        Assert.Equal(1, result.Processors.Single(p => p.ProcessorId == "send-sms")
+            .Execution.MaxConcurrency);
     }
 
     [Fact]
@@ -67,8 +66,8 @@ public class ProcessorExecutionConfigurationTests
 
         var result = AlbertoModuleDefinition.ApplyConfiguration(definition, configuration);
 
-        result.Processors.Single(p => p.ProcessorId == "send-email")
-            .Execution.BatchingMode.Should().Be(ProcessorBatchingMode.Disabled);
+        Assert.Equal(ProcessorBatchingMode.Disabled, result.Processors.Single(p => p.ProcessorId == "send-email")
+            .Execution.BatchingMode);
     }
 
     // ── I1.2: absent or unmatched sections are harmless ─────────────────────
@@ -84,11 +83,12 @@ public class ProcessorExecutionConfigurationTests
         // Must not throw; the unknown processor id is simply not matched.
         var act = () => AlbertoModuleDefinition.ApplyConfiguration(definition, configuration);
 
-        act.Should().NotThrow();
+        act();
 
         var result = AlbertoModuleDefinition.ApplyConfiguration(definition, configuration);
-        result.Processors.Single(p => p.ProcessorId == "send-email")
-            .Execution.MaxConcurrency.Should().Be(1, "send-email was not in config");
+        // send-email was not in config
+        Assert.Equal(1, result.Processors.Single(p => p.ProcessorId == "send-email")
+            .Execution.MaxConcurrency);
     }
 
     [Fact]
@@ -99,8 +99,8 @@ public class ProcessorExecutionConfigurationTests
 
         var result = AlbertoModuleDefinition.ApplyConfiguration(definition, configuration);
 
-        result.Processors.Single(p => p.ProcessorId == "send-email")
-            .Execution.Should().Be(ProcessorExecutionOptions.Default);
+        Assert.Equal(ProcessorExecutionOptions.Default, result.Processors.Single(p => p.ProcessorId == "send-email")
+            .Execution);
     }
 
     // ── I1.3: config-only ALB0005 violation is caught ───────────────────────
@@ -119,10 +119,9 @@ public class ProcessorExecutionConfigurationTests
 
         var after = AlbertoModuleDefinition.ApplyConfiguration(definition, configuration);
 
-        new AlbertoModuleValidator()
-            .Collect(after)
-            .Should().ContainSingle(f => f.Code == "ALB0005",
-                "MaxConcurrency=4 + BatchingMode=Disabled introduced via config is still invalid");
+        // MaxConcurrency=4 + BatchingMode=Disabled introduced via config is still invalid
+        Assert.Single(new AlbertoModuleValidator()
+            .Collect(after), f => f.Code == "ALB0005");
     }
 
     // ── I1.4: the overlay reaches the loop, not only the definition ─────────
@@ -153,6 +152,6 @@ public class ProcessorExecutionConfigurationTests
 
         var build = () => provider.GetRequiredKeyedService<ILiveLoopSuspender>("orders");
 
-        build.Should().NotThrow();
+        build();
     }
 }

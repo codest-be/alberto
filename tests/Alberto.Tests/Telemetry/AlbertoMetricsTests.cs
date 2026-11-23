@@ -2,7 +2,6 @@ using System.Diagnostics.Metrics;
 using Alberto.InMemory;
 using Alberto.Subscriptions;
 using Alberto.Telemetry;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Telemetry;
@@ -22,15 +21,15 @@ public sealed class AlbertoMetricsTests
         // OTel semantic conventions (UCUM) mandate "s" for durations.
         // The old unit was "ms"; this test ensures the v1 contract is correct
         // before anyone builds a Prometheus recording rule on it.
-        AlbertoMetrics.AppendDuration.Unit.Should().Be("s",
-            "OTel semantic conventions require duration units in seconds");
+        // OTel semantic conventions require duration units in seconds
+        Assert.Equal("s", AlbertoMetrics.AppendDuration.Unit);
     }
 
     [Fact]
     public void ProcessingDuration_unit_is_seconds()
     {
-        AlbertoMetrics.ProcessingDuration.Unit.Should().Be("s",
-            "OTel semantic conventions require duration units in seconds");
+        // OTel semantic conventions require duration units in seconds
+        Assert.Equal("s", AlbertoMetrics.ProcessingDuration.Unit);
     }
 
     [Fact]
@@ -47,8 +46,7 @@ public sealed class AlbertoMetricsTests
             context.ProcessorId,
             () => middleware(context, () => Task.CompletedTask));
 
-        value.Should().BeLessThan(1.0,
-            "a same-process handler completes in microseconds; a value >= 1 means milliseconds were recorded instead of seconds");
+        Assert.True(value < 1.0, "a same-process handler completes in microseconds; a value >= 1 means milliseconds were recorded instead of seconds");
     }
 
     [Fact]
@@ -62,8 +60,7 @@ public sealed class AlbertoMetricsTests
             context.ProcessorId,
             () => middleware(context, () => Task.CompletedTask));
 
-        value.Should().BeLessThan(1.0,
-            "a same-process handler completes in microseconds; a value >= 1 means milliseconds were recorded instead of seconds");
+        Assert.True(value < 1.0, "a same-process handler completes in microseconds; a value >= 1 means milliseconds were recorded instead of seconds");
     }
 
     // ── (b) ProcessorLag must not lose data when two modules share a processor name ─
@@ -91,13 +88,13 @@ public sealed class AlbertoMetricsTests
                      && TagValue(m.Tags, "processor") == processorId)
             .ToList();
 
-        forOrders.Should().ContainSingle(
-            "orders.projection must have its own lag series (not overwritten by payments.projection)");
-        forPayments.Should().ContainSingle(
-            "payments.projection must have its own lag series (not overwritten by orders.projection)");
+        // orders.projection must have its own lag series (not overwritten by payments.projection)
+        Assert.Single(forOrders);
+        // payments.projection must have its own lag series (not overwritten by orders.projection)
+        Assert.Single(forPayments);
 
-        forOrders.Single().Value.Should().Be(7);
-        forPayments.Single().Value.Should().Be(42);
+        Assert.Equal(7, forOrders.Single().Value);
+        Assert.Equal(42, forPayments.Single().Value);
     }
 
     // ── (c) ProcessingErrors and ProcessingDuration must carry {processor, module, [shard]} ─
@@ -115,9 +112,9 @@ public sealed class AlbertoMetricsTests
             context.ProcessorId,
             () => middleware(context, () => Task.CompletedTask));
 
-        TagValue(tags, "module").Should().Be("my-module",
-            "ProcessingDuration must carry a module tag to match EventsProcessed");
-        TagValue(tags, "processor").Should().Be(context.ProcessorId);
+        // ProcessingDuration must carry a module tag to match EventsProcessed
+        Assert.Equal("my-module", TagValue(tags, "module"));
+        Assert.Equal(context.ProcessorId, TagValue(tags, "processor"));
     }
 
     [Fact]
@@ -137,10 +134,10 @@ public sealed class AlbertoMetricsTests
                 return Task.CompletedTask;
             }));
 
-        TagValue(tags, "module").Should().Be("my-module",
-            "ProcessingErrors must carry a module tag to match EventsProcessed");
-        TagValue(tags, "processor").Should().Be(context.ProcessorId);
-        TagValue(tags, "error.type").Should().Be(typeof(InvalidOperationException).FullName);
+        // ProcessingErrors must carry a module tag to match EventsProcessed
+        Assert.Equal("my-module", TagValue(tags, "module"));
+        Assert.Equal(context.ProcessorId, TagValue(tags, "processor"));
+        Assert.Equal(typeof(InvalidOperationException).FullName, TagValue(tags, "error.type"));
     }
 
     [Fact]
@@ -161,10 +158,10 @@ public sealed class AlbertoMetricsTests
                 catch (InvalidOperationException) { /* expected: recorded, then re-thrown */ }
             });
 
-        TagValue(tags, "module").Should().Be("my-module",
-            "ProcessingErrors must carry a module tag even when the exception propagates");
-        TagValue(tags, "processor").Should().Be(context.ProcessorId);
-        TagValue(tags, "error.type").Should().Be(typeof(InvalidOperationException).FullName);
+        // ProcessingErrors must carry a module tag even when the exception propagates
+        Assert.Equal("my-module", TagValue(tags, "module"));
+        Assert.Equal(context.ProcessorId, TagValue(tags, "processor"));
+        Assert.Equal(typeof(InvalidOperationException).FullName, TagValue(tags, "error.type"));
     }
 
     [Fact]
@@ -178,9 +175,9 @@ public sealed class AlbertoMetricsTests
             context.ProcessorId,
             () => middleware(context, () => Task.CompletedTask));
 
-        TagValue(tags, "module").Should().Be("my-module",
-            "ProcessingDuration must carry a module tag to match EventsProcessed");
-        TagValue(tags, "processor").Should().Be(context.ProcessorId);
+        // ProcessingDuration must carry a module tag to match EventsProcessed
+        Assert.Equal("my-module", TagValue(tags, "module"));
+        Assert.Equal(context.ProcessorId, TagValue(tags, "processor"));
     }
 
     [Fact]
@@ -199,10 +196,10 @@ public sealed class AlbertoMetricsTests
                 return Task.CompletedTask;
             }));
 
-        TagValue(tags, "module").Should().Be("my-module",
-            "ProcessingErrors must carry a module tag to match EventsProcessed");
-        TagValue(tags, "processor").Should().Be(context.ProcessorId);
-        TagValue(tags, "error.type").Should().Be(typeof(InvalidOperationException).FullName);
+        // ProcessingErrors must carry a module tag to match EventsProcessed
+        Assert.Equal("my-module", TagValue(tags, "module"));
+        Assert.Equal(context.ProcessorId, TagValue(tags, "processor"));
+        Assert.Equal(typeof(InvalidOperationException).FullName, TagValue(tags, "error.type"));
     }
 
     [Fact]
@@ -218,8 +215,8 @@ public sealed class AlbertoMetricsTests
             context.ProcessorId,
             () => middleware(context, () => Task.CompletedTask));
 
-        TagValue(tags, "module").Should().Be("my-module");
-        TagValue(tags, "shard").Should().Be("shard-1");
+        Assert.Equal("my-module", TagValue(tags, "module"));
+        Assert.Equal("shard-1", TagValue(tags, "shard"));
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
@@ -290,8 +287,7 @@ public sealed class AlbertoMetricsTests
 
         lock (gate)
         {
-            captured.Should().NotBeNull(
-                $"expected at least one measurement on {instrumentName} tagged with processor '{processorId}' but none were recorded");
+            Assert.NotNull(captured);
             return captured!.Value;
         }
     }

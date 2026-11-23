@@ -2,7 +2,6 @@ using System.Reflection;
 using Alberto.Checkpoints;
 using Alberto.DeadLetters;
 using Alberto.Projections;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests;
@@ -112,22 +111,7 @@ public sealed class ExtensionPointContractTests
             .OrderBy(s => s, StringComparer.Ordinal)
             .ToArray();
 
-        actual.Should().BeEquivalentTo(
-            expected,
-            because:
-                $"\n\nThe abstract surface of {interfaceType.Name} is frozen: it is implemented " +
-                "outside this repository, so adding a member without a default body breaks every " +
-                "implementation at compile time and every deployed one at load time.\n\n" +
-                "WHAT TO DO:\n" +
-                "  Option A — Give the new member a default implementation in terms of the\n" +
-                "             existing ones. It stops being abstract and this test passes.\n\n" +
-                "  Option B — There is no correct default, so the capability is optional.\n" +
-                "             Put it on its own interface and type-test for it at the call site.\n" +
-                "             See IClaimableDeadLetterStore and IFencedCheckpointStore.\n\n" +
-                "  Option C — It really must be required. Update the baseline in this file AND\n" +
-                "             label the PR 'breaking-change', describing the migration in its\n" +
-                "             description. That is a major-version change.\n\n" +
-                "See CONTRIBUTING.md §\"Extension points\".\n");
+        Assert.Equivalent(expected, actual, strict: true);
     }
 
     /// <summary>
@@ -137,12 +121,12 @@ public sealed class ExtensionPointContractTests
     [Fact]
     public void Baseline_CoversEveryInterfaceItClaimsTo()
     {
-        FrozenAbstractMembers.Keys.Should().OnlyContain(
-            t => t.IsInterface && t.IsPublic,
-            "every pinned extension point must still be a public interface");
+        // every pinned extension point must still be a public interface
+        Assert.NotEmpty(FrozenAbstractMembers.Keys);
+        Assert.All(FrozenAbstractMembers.Keys, t => Assert.True(t.IsInterface && t.IsPublic));
 
-        FrozenAbstractMembers.Should().HaveCount(
-            5, "removing an interface from the baseline removes it from the freeze without a diff that says so");
+        // removing an interface from the baseline removes it from the freeze without a diff that says so
+        Assert.Equal(5, FrozenAbstractMembers.Count());
     }
 
     /// <summary>Theory data: one case per pinned interface.</summary>

@@ -1,5 +1,4 @@
 using Alberto.InMemory;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests;
@@ -14,35 +13,32 @@ public class EventDataJsonTests
     [Fact]
     public void Insignificant_whitespace_is_dropped()
     {
-        EventDataJson.Normalize("""{  "a" : 1 ,  "b" : [ 1, 2 ] }""", "e")
-            .Should().Be("""{"a":1,"b":[1,2]}""");
+        Assert.Equal("""{"a":1,"b":[1,2]}""", EventDataJson.Normalize("""{  "a" : 1 ,  "b" : [ 1, 2 ] }""", "e"));
     }
 
     [Fact]
     public void Object_keys_are_ordered_by_length_then_bytewise()
     {
         // jsonb: {"z": 1, "aa": 2, "amount": 100, "orderId": "abc"}
-        EventDataJson.Normalize("""{"orderId":"abc","amount":100,"z":1,"aa":2}""", "e")
-            .Should().Be("""{"z":1,"aa":2,"amount":100,"orderId":"abc"}""");
+        Assert.Equal("""{"z":1,"aa":2,"amount":100,"orderId":"abc"}""", EventDataJson.Normalize("""{"orderId":"abc","amount":100,"z":1,"aa":2}""", "e"));
     }
 
     [Fact]
     public void Ordering_applies_at_every_level()
     {
-        EventDataJson.Normalize("""{"o":{"z":1,"a":{"yy":1,"x":2}},"arr":[{"b":1,"a":2}]}""", "e")
-            .Should().Be("""{"o":{"a":{"x":2,"yy":1},"z":1},"arr":[{"a":2,"b":1}]}""");
+        Assert.Equal("""{"o":{"a":{"x":2,"yy":1},"z":1},"arr":[{"a":2,"b":1}]}""", EventDataJson.Normalize("""{"o":{"z":1,"a":{"yy":1,"x":2}},"arr":[{"b":1,"a":2}]}""", "e"));
     }
 
     [Fact]
     public void Array_order_is_untouched()
     {
-        EventDataJson.Normalize("[3, 1, 2]", "e").Should().Be("[3,1,2]");
+        Assert.Equal("[3,1,2]", EventDataJson.Normalize("[3, 1, 2]", "e"));
     }
 
     [Fact]
     public void Duplicate_keys_collapse_to_the_last_one()
     {
-        EventDataJson.Normalize("""{"a":1,"a":2}""", "e").Should().Be("""{"a":2}""");
+        Assert.Equal("""{"a":2}""", EventDataJson.Normalize("""{"a":1,"a":2}""", "e"));
     }
 
     [Fact]
@@ -50,8 +46,7 @@ public class EventDataJsonTests
     {
         // "é" is one char but two UTF-8 bytes, so it sorts after the two-byte-and-shorter keys
         // and alongside "ab" — length 2 either way — where the byte comparison decides.
-        EventDataJson.Normalize("""{"é":1,"ab":2,"z":3}""", "e")
-            .Should().Be("""{"z":3,"ab":2,"é":1}""");
+        Assert.Equal("""{"z":3,"ab":2,"é":1}""", EventDataJson.Normalize("""{"é":1,"ab":2,"z":3}""", "e"));
     }
 
     [Fact]
@@ -59,7 +54,7 @@ public class EventDataJsonTests
     {
         // jsonb stores text, not escapes. The default System.Text.Json encoder would emit
         // é here, which would make the payload look different for no reason.
-        EventDataJson.Normalize("""{"s":"café"}""", "e").Should().Be("""{"s":"café"}""");
+        Assert.Equal("""{"s":"café"}""", EventDataJson.Normalize("""{"s":"café"}""", "e"));
     }
 
     [Fact]
@@ -67,8 +62,7 @@ public class EventDataJsonTests
     {
         // Deliberately NOT jsonb's numeric canonicalization, which would render this 1E+30 as
         // thirty zeros. See EventDataJson's remarks: near-miss emulation is worse than none.
-        EventDataJson.Normalize("""{"a":1E+30,"b":1.500}""", "e")
-            .Should().Be("""{"a":1E+30,"b":1.500}""");
+        Assert.Equal("""{"a":1E+30,"b":1.500}""", EventDataJson.Normalize("""{"a":1E+30,"b":1.500}""", "e"));
     }
 
     [Fact]
@@ -76,8 +70,8 @@ public class EventDataJsonTests
     {
         var act = () => EventDataJson.Normalize("""{"a": }""", "order-placed");
 
-        act.Should().Throw<ArgumentException>()
-            .WithMessage("*order-placed*not well-formed JSON*");
+        var exception = Assert.ThrowsAny<ArgumentException>(act);
+        Assert.Matches("(?is)order-placed.*not well-formed JSON", exception.Message);
     }
 
     [Fact]
@@ -88,8 +82,8 @@ public class EventDataJsonTests
         // every test and fails on the first real deployment.
         var act = () => EventDataJson.Normalize("{\"s\":\"a\\u0000b\"}", "order-placed");
 
-        act.Should().Throw<ArgumentException>()
-            .WithMessage("*order-placed*NUL*");
+        var exception = Assert.ThrowsAny<ArgumentException>(act);
+        Assert.Matches("(?is)order-placed.*NUL", exception.Message);
     }
 
     [Fact]
@@ -97,6 +91,6 @@ public class EventDataJsonTests
     {
         const string canonical = """{"z":1,"aa":2}""";
 
-        EventDataJson.Normalize(canonical, "e").Should().Be(canonical);
+        Assert.Equal(canonical, EventDataJson.Normalize(canonical, "e"));
     }
 }

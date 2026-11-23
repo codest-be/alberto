@@ -3,7 +3,6 @@ using System.Text.Json;
 using Alberto.Configuration;
 using Alberto.InMemory;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -188,18 +187,18 @@ public sealed class ProjectionHaltTests
         await rig.PumpUntilAsync(() => rig.Processor.PoisonAttempts >= attemptsWhenHalted + 3, "in-place retries of the failing event");
 
         // Halted: stuck on the event, nothing later applied, nothing dead-lettered, reported.
-        rig.Processor.Snapshot().Should().NotContain(["c", "d"]);
-        (await rig.DeadLetters.CountAsync("flaky", cancellationToken)).Should().Be(0);
-        (await rig.Checkpoints.GetAsync("flaky", cancellationToken) ?? 0).Should().BeLessThan(3, "the checkpoint must not pass the failing event");
-        rig.Loop.IsFaulted.Should().BeTrue();
-        rig.Health.Get("flaky").IsFaulted.Should().BeTrue();
+        Assert.DoesNotContain(["c", "d"], rig.Processor.Snapshot());
+        Assert.Equal(0, await rig.DeadLetters.CountAsync("flaky", cancellationToken));
+        Assert.True((await rig.Checkpoints.GetAsync("flaky", cancellationToken) ?? 0) < 3, "the checkpoint must not pass the failing event");
+        Assert.True(rig.Loop.IsFaulted);
+        Assert.True(rig.Health.Get("flaky").IsFaulted);
 
         // The failure clears: the same event is applied, then the rest, in order.
         rig.Processor.Broken = false;
         await rig.PumpUntilAsync(() => rig.Processor.Snapshot().Length == 5, "resume after the failure clears");
 
-        rig.Processor.Snapshot().Should().Equal("a", "b", "poison", "c", "d");
-        (await rig.DeadLetters.CountAsync("flaky", cancellationToken)).Should().Be(0);
+        Assert.Equal(["a", "b", "poison", "c", "d"], rig.Processor.Snapshot());
+        Assert.Equal(0, await rig.DeadLetters.CountAsync("flaky", cancellationToken));
         await rig.PumpUntilAsync(() => !rig.Loop.IsFaulted && !rig.Health.Get("flaky").IsFaulted, "halt flag clears");
     }
 
@@ -213,9 +212,9 @@ public sealed class ProjectionHaltTests
 
         await rig.PumpUntilAsync(() => rig.Processor.Snapshot().Length == 2, "events after the poison one are applied");
 
-        rig.Processor.Snapshot().Should().Equal("a", "c");
-        (await rig.DeadLetters.CountAsync("flaky", cancellationToken)).Should().Be(1);
-        rig.Loop.IsFaulted.Should().BeFalse();
+        Assert.Equal(["a", "c"], rig.Processor.Snapshot());
+        Assert.Equal(1, await rig.DeadLetters.CountAsync("flaky", cancellationToken));
+        Assert.False(rig.Loop.IsFaulted);
     }
 
     [Fact]
@@ -236,7 +235,7 @@ public sealed class ProjectionHaltTests
         // Nothing happens before the configured wait elapses.
         rig.Clock.Advance(TimeSpan.FromMinutes(9));
         await Task.Delay(50, TestContext.Current.CancellationToken);
-        rig.Processor.PoisonAttempts.Should().Be(before);
+        Assert.Equal(before, rig.Processor.PoisonAttempts);
 
         rig.Clock.Advance(TimeSpan.FromMinutes(2));
         await rig.PumpUntilAsync(() => rig.Processor.PoisonAttempts > before, "retry after the override delay");
@@ -259,12 +258,12 @@ public sealed class ProjectionHaltTests
             },
         ]);
 
-        policies.For("p").HaltsOnFailure.Should().BeTrue();
-        policies.For("p::rebuild::2").HaltsOnFailure.Should().BeTrue();
-        policies.For("o").HaltsOnFailure.Should().BeTrue();
-        policies.For("r").HaltsOnFailure.Should().BeFalse();
-        policies.For("unknown").HaltsOnFailure.Should().BeFalse();
-        policies.For("tuned").Retry.MaxRetries.Should().Be(9);
-        policies.For("tuned").Retry.RetryDelay.Should().Be(module.Retry.RetryDelay);
+        Assert.True(policies.For("p").HaltsOnFailure);
+        Assert.True(policies.For("p::rebuild::2").HaltsOnFailure);
+        Assert.True(policies.For("o").HaltsOnFailure);
+        Assert.False(policies.For("r").HaltsOnFailure);
+        Assert.False(policies.For("unknown").HaltsOnFailure);
+        Assert.Equal(9, policies.For("tuned").Retry.MaxRetries);
+        Assert.Equal(module.Retry.RetryDelay, policies.For("tuned").Retry.RetryDelay);
     }
 }

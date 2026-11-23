@@ -1,7 +1,6 @@
 using System.Reflection;
 using Alberto.Configuration;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Configuration;
@@ -58,8 +57,8 @@ public class OptionsOverrideParityTests
     [Fact]
     public void At_least_one_options_override_pair_is_discovered()
     {
-        DiscoverPairs().Should().NotBeEmpty(
-            "the parity test is worthless if it silently discovers nothing");
+        // the parity test is worthless if it silently discovers nothing
+        Assert.NotEmpty(DiscoverPairs());
     }
 
     [Fact]
@@ -97,7 +96,7 @@ public class OptionsOverrideParityTests
             }
         }
 
-        problems.Should().BeEmpty(string.Join(Environment.NewLine, problems));
+        Assert.Empty(problems);
     }
 
     [Fact]
@@ -119,6 +118,6 @@ public class OptionsOverrideParityTests
             }
         }
 
-        problems.Should().BeEmpty(string.Join(Environment.NewLine, problems));
+        Assert.Empty(problems);
     }
 }

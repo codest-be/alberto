@@ -1,4 +1,4 @@
-using FluentAssertions;
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace Alberto.Tests;
@@ -26,10 +26,9 @@ public sealed class EventTagReservedConceptGuardTests
     [Fact]
     public void PublicConstructor_RejectsReservedConcept()
     {
-        var act = () => new EventTag(EventTag.SchemaVersionConcept, "1");
-        act.Should().Throw<ArgumentException>()
-           .WithParameterName("concept")
-           .WithMessage($"*{EventTag.SchemaVersionConcept}*reserved*");
+        var exception = Assert.ThrowsAny<ArgumentException>(() => new EventTag(EventTag.SchemaVersionConcept, "1"));
+        Assert.Equal("concept", exception.ParamName);
+        Assert.Matches($"(?is){Regex.Escape(EventTag.SchemaVersionConcept)}.*reserved", exception.Message);
     }
 
     [Fact]
@@ -38,9 +37,9 @@ public sealed class EventTagReservedConceptGuardTests
         // Regression pin: the public constructor must not accidentally start
         // rejecting ordinary domain concepts.
         var tag = new EventTag("order", "42");
-        tag.Concept.Should().Be("order");
-        tag.Id.Should().Be("42");
-        tag.Value.Should().Be("order:42");
+        Assert.Equal("order", tag.Concept);
+        Assert.Equal("42", tag.Id);
+        Assert.Equal("order:42", tag.Value);
     }
 
     // ------------------------------------------------------------------
@@ -50,17 +49,16 @@ public sealed class EventTagReservedConceptGuardTests
     [Fact]
     public void Parse_RejectsReservedConcept()
     {
-        var act = () => EventTag.Parse($"{EventTag.SchemaVersionConcept}:1");
-        act.Should().Throw<ArgumentException>()
-           .WithMessage($"*{EventTag.SchemaVersionConcept}*reserved*");
+        var exception = Assert.ThrowsAny<ArgumentException>(() => EventTag.Parse($"{EventTag.SchemaVersionConcept}:1"));
+        Assert.Matches($"(?is){Regex.Escape(EventTag.SchemaVersionConcept)}.*reserved", exception.Message);
     }
 
     [Fact]
     public void Parse_AcceptsNormalTag()
     {
         var tag = EventTag.Parse("customer:abc-123");
-        tag.Concept.Should().Be("customer");
-        tag.Id.Should().Be("abc-123");
+        Assert.Equal("customer", tag.Concept);
+        Assert.Equal("abc-123", tag.Id);
     }
 
     // ------------------------------------------------------------------
@@ -72,8 +70,8 @@ public sealed class EventTagReservedConceptGuardTests
     {
         // Before the fix, EventTag.TryParse("_version:1", out _) returned true.
         var succeeded = EventTag.TryParse($"{EventTag.SchemaVersionConcept}:1", out var result);
-        succeeded.Should().BeFalse();
-        result.Should().Be(default(EventTag));
+        Assert.False(succeeded);
+        Assert.Equal(default(EventTag), result);
     }
 
     [Theory]
@@ -83,9 +81,9 @@ public sealed class EventTagReservedConceptGuardTests
     public void TryParse_Succeeds_ForNormalTags(string input, string expectedConcept, string expectedId)
     {
         var succeeded = EventTag.TryParse(input, out var result);
-        succeeded.Should().BeTrue();
-        result.Concept.Should().Be(expectedConcept);
-        result.Id.Should().Be(expectedId);
+        Assert.True(succeeded);
+        Assert.Equal(expectedConcept, result.Concept);
+        Assert.Equal(expectedId, result.Id);
     }
 
     [Theory]
@@ -96,7 +94,7 @@ public sealed class EventTagReservedConceptGuardTests
     [InlineData("order:bad id")]
     public void TryParse_ReturnsFalse_ForMalformedInput(string input)
     {
-        EventTag.TryParse(input, out _).Should().BeFalse();
+        Assert.False(EventTag.TryParse(input, out _));
     }
 
     // ------------------------------------------------------------------
@@ -115,18 +113,18 @@ public sealed class EventTagReservedConceptGuardTests
         // The read hot-path must be able to materialise the _v tag without
         // going through the public reservation guard.
         var tag = EventTag.FromStorage(EventTag.SchemaVersionConcept, "3");
-        tag.Concept.Should().Be(EventTag.SchemaVersionConcept);
-        tag.Id.Should().Be("3");
-        tag.Value.Should().Be("_version:3");
+        Assert.Equal(EventTag.SchemaVersionConcept, tag.Concept);
+        Assert.Equal("3", tag.Id);
+        Assert.Equal("_version:3", tag.Value);
     }
 
     [Fact]
     public void FromStorage_SingleString_AllowsReservedConcept()
     {
         var tag = EventTag.FromStorage("_version:2");
-        tag.Concept.Should().Be(EventTag.SchemaVersionConcept);
-        tag.Id.Should().Be("2");
-        tag.Value.Should().Be("_version:2");
+        Assert.Equal(EventTag.SchemaVersionConcept, tag.Concept);
+        Assert.Equal("2", tag.Id);
+        Assert.Equal("_version:2", tag.Value);
     }
 
     [Fact]
@@ -134,16 +132,16 @@ public sealed class EventTagReservedConceptGuardTests
     {
         // Regression pin: the bypass path must also work for ordinary tags.
         var tag = EventTag.FromStorage("order", "99");
-        tag.Concept.Should().Be("order");
-        tag.Id.Should().Be("99");
+        Assert.Equal("order", tag.Concept);
+        Assert.Equal("99", tag.Id);
     }
 
     [Fact]
     public void FromStorage_SingleString_AllowsNormalConcept()
     {
         var tag = EventTag.FromStorage("order:99");
-        tag.Concept.Should().Be("order");
-        tag.Id.Should().Be("99");
+        Assert.Equal("order", tag.Concept);
+        Assert.Equal("99", tag.Id);
     }
 
     // ------------------------------------------------------------------
@@ -154,17 +152,17 @@ public sealed class EventTagReservedConceptGuardTests
     public void ForVersion_ProducesCorrectTag()
     {
         var tag = EventTag.ForVersion(2);
-        tag.Concept.Should().Be(EventTag.SchemaVersionConcept);
-        tag.Id.Should().Be("2");
-        tag.Value.Should().Be("_version:2");
+        Assert.Equal(EventTag.SchemaVersionConcept, tag.Concept);
+        Assert.Equal("2", tag.Id);
+        Assert.Equal("_version:2", tag.Value);
     }
 
     [Fact]
     public void ForVersion_DefaultsToV1()
     {
         var tag = EventTag.ForVersion(1);
-        tag.Concept.Should().Be(EventTag.SchemaVersionConcept);
-        tag.Id.Should().Be("1");
+        Assert.Equal(EventTag.SchemaVersionConcept, tag.Concept);
+        Assert.Equal("1", tag.Id);
     }
 }
 
@@ -177,17 +175,16 @@ public sealed class TagAttributeReservedConceptGuardTests
     [Fact]
     public void TagAttribute_RejectsReservedConcept()
     {
-        var act = () => new TagAttribute(EventTag.SchemaVersionConcept);
-        act.Should().Throw<ArgumentException>()
-           .WithParameterName("concept")
-           .WithMessage($"*{EventTag.SchemaVersionConcept}*reserved*");
+        var exception = Assert.ThrowsAny<ArgumentException>(() => new TagAttribute(EventTag.SchemaVersionConcept));
+        Assert.Equal("concept", exception.ParamName);
+        Assert.Matches($"(?is){Regex.Escape(EventTag.SchemaVersionConcept)}.*reserved", exception.Message);
     }
 
     [Fact]
     public void TagAttribute_AcceptsNormalConcept()
     {
         var attr = new TagAttribute("order");
-        attr.Concept.Should().Be("order");
+        Assert.Equal("order", attr.Concept);
     }
 }
 
@@ -215,31 +212,30 @@ public sealed class ReservedConceptPrefixTests
     [InlineData("_v")]      // the previous name for the version tag; still reserved
     public void PublicConstructor_RejectsAnyLeadingUnderscoreConcept(string concept)
     {
-        var act = () => new EventTag(concept, "1");
-        act.Should().Throw<ArgumentException>()
-           .WithParameterName("concept")
-           .WithMessage("*reserved*");
+        var exception = Assert.ThrowsAny<ArgumentException>(() => new EventTag(concept, "1"));
+        Assert.Equal("concept", exception.ParamName);
+        Assert.Contains("reserved", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void Parse_RejectsAnyLeadingUnderscoreConcept()
     {
-        var act = () => EventTag.Parse($"{Hypothetical}:1");
-        act.Should().Throw<ArgumentException>().WithMessage("*reserved*");
+        var exception = Assert.ThrowsAny<ArgumentException>(() => EventTag.Parse($"{Hypothetical}:1"));
+        Assert.Contains("reserved", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void TryParse_ReturnsFalse_ForAnyLeadingUnderscoreConcept()
     {
-        EventTag.TryParse($"{Hypothetical}:1", out var result).Should().BeFalse();
-        result.Should().Be(default(EventTag));
+        Assert.False(EventTag.TryParse($"{Hypothetical}:1", out var result));
+        Assert.Equal(default(EventTag), result);
     }
 
     [Fact]
     public void TagAttribute_RejectsAnyLeadingUnderscoreConcept()
     {
-        var act = () => new TagAttribute(Hypothetical);
-        act.Should().Throw<ArgumentException>().WithParameterName("concept");
+        var exception = Assert.ThrowsAny<ArgumentException>(() => new TagAttribute(Hypothetical));
+        Assert.Equal("concept", exception.ParamName);
     }
 
     [Fact]
@@ -248,7 +244,7 @@ public sealed class ReservedConceptPrefixTests
         // Only the leading position is reserved. Snake-case domain concepts such as
         // "order_line" must keep working — narrowing this would break real tags.
         var tag = new EventTag("order_line", "42");
-        tag.Value.Should().Be("order_line:42");
+        Assert.Equal("order_line:42", tag.Value);
     }
 
     [Fact]
@@ -256,6 +252,6 @@ public sealed class ReservedConceptPrefixTests
     {
         // If someone renames the version tag to something without the prefix, the guards
         // silently stop covering it. Pin the relationship rather than the literal name.
-        EventTag.SchemaVersionConcept.Should().StartWith(EventTag.ReservedConceptPrefix);
+        Assert.StartsWith(EventTag.ReservedConceptPrefix, EventTag.SchemaVersionConcept);
     }
 }

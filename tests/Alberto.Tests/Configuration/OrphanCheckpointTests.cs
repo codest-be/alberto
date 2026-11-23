@@ -4,7 +4,6 @@ using Alberto.InMemory;
 using Alberto.Checkpoints;
 using Alberto.Projections;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
@@ -67,9 +66,9 @@ public class OrphanCheckpointTests
             Definition(OrphanCheckpointPolicy.Strict, "OrderSummary"),
             new FakeInventory("OrderSummary", "OldReactorName"));
 
-        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
-        exception.Which.Message.Should().Contain("OldReactorName");
-        exception.Which.Message.Should().Contain("ICheckpointStore.SaveAsync");
+        var exception = await Assert.ThrowsAnyAsync<InvalidOperationException>(act);
+        Assert.Contains("OldReactorName", exception.Message);
+        Assert.Contains("ICheckpointStore.SaveAsync", exception.Message);
     }
 
     [Fact]
@@ -79,7 +78,7 @@ public class OrphanCheckpointTests
             Definition(OrphanCheckpointPolicy.Strict, "OrderSummary"),
             new FakeInventory("OrderSummary"));
 
-        await act.Should().NotThrowAsync();
+        await act();
     }
 
     [Fact]
@@ -103,7 +102,8 @@ public class OrphanCheckpointTests
 
         var act = () => RunAsync(definition, new FakeInventory("order-mails-v2", "order-mails"));
 
-        await act.Should().NotThrowAsync("the old row is kept so a rolled-back deploy resumes where it stopped");
+        // the old row is kept so a rolled-back deploy resumes where it stopped
+        await act();
     }
 
     [Fact]
@@ -113,7 +113,7 @@ public class OrphanCheckpointTests
             Definition(OrphanCheckpointPolicy.Warn, "OrderSummary"),
             new FakeInventory("OldReactorName"));
 
-        await act.Should().NotThrowAsync();
+        await act();
     }
 
     [Fact]
@@ -123,8 +123,8 @@ public class OrphanCheckpointTests
 
         var act = () => RunAsync(Definition(OrphanCheckpointPolicy.Off, "OrderSummary"), inventory);
 
-        await act.Should().NotThrowAsync();
-        inventory.Calls.Should().Be(0);
+        await act();
+        Assert.Equal(0, inventory.Calls);
     }
 
     [Fact]
@@ -134,7 +134,7 @@ public class OrphanCheckpointTests
             Definition(OrphanCheckpointPolicy.Strict, "OrderSummary"),
             inventory: null);
 
-        await act.Should().NotThrowAsync();
+        await act();
     }
 
     // -----------------------------------------------------------------------
@@ -156,8 +156,8 @@ public class OrphanCheckpointTests
             Definition(OrphanCheckpointPolicy.Strict, "OrderSummary"),
             new FakeInventory("OrderSummary", shadowKey));
 
-        await act.Should().NotThrowAsync(
-            "shadow rebuild keys are artefacts of the rebuild protocol, not missing processors");
+        // shadow rebuild keys are artefacts of the rebuild protocol, not missing processors
+        await act();
     }
 
     [Fact]
@@ -171,11 +171,11 @@ public class OrphanCheckpointTests
             Definition(OrphanCheckpointPolicy.Strict, "OrderSummary"),
             new FakeInventory("OrderSummary", shadowKey, "OldReactorName"));
 
-        var exception = await act.Should().ThrowAsync<InvalidOperationException>(
-            "the real orphan must still be caught even when shadow keys are present");
-        exception.Which.Message.Should().Contain("OldReactorName");
-        exception.Which.Message.Should().NotContain(shadowKey,
-            "shadow keys must be excluded from the orphan report");
+        // the real orphan must still be caught even when shadow keys are present
+        var exception = await Assert.ThrowsAnyAsync<InvalidOperationException>(act);
+        Assert.Contains("OldReactorName", exception.Message);
+        // shadow keys must be excluded from the orphan report
+        Assert.DoesNotContain(shadowKey, exception.Message);
     }
 
     // -----------------------------------------------------------------------
@@ -294,26 +294,27 @@ public class OrphanCheckpointTests
 
         // Write a checkpoint into the buffer only — the inner store is still empty.
         await caching.SaveAsync("OldProcessorName", 100, cancellationToken);
-        (await inner.GetAsync("OldProcessorName", cancellationToken)).Should().BeNull(
-            "the checkpoint is still buffered; the inner store must not have it yet");
+        // the checkpoint is still buffered; the inner store must not have it yet
+        Assert.Null((await inner.GetAsync("OldProcessorName", cancellationToken)));
 
         // InMemoryFencedCheckpointStore implements ICheckpointInventory and CanEnumerate defaults
         // to true, so the resolution pattern must yield a non-null inventory.
         ICheckpointInventory? inventory =
             caching is ICheckpointInventory { CanEnumerate: true } inv ? inv : null;
-        inventory.Should().NotBeNull("InMemoryFencedCheckpointStore implements ICheckpointInventory");
+        // InMemoryFencedCheckpointStore implements ICheckpointInventory
+        Assert.NotNull(inventory);
 
         var ids = await inventory!.ListProcessorIdsAsync(cancellationToken);
-        ids.Should().Contain("OldProcessorName",
-            "the decorator must flush pending writes before listing so buffered processors are visible");
+        // the decorator must flush pending writes before listing so buffered processors are visible
+        Assert.Contains("OldProcessorName", ids);
 
         // Feed the inventory to the hosted service under Strict — it must detect the orphan.
         var definition = Definition(OrphanCheckpointPolicy.Strict, "NewProcessorName");
         var act = () => RunAsync(definition, inventory);
 
-        var exception = await act.Should().ThrowAsync<InvalidOperationException>(
-            "Strict policy must detect the checkpoint left behind by the renamed processor");
-        exception.Which.Message.Should().Contain("OldProcessorName");
+        // Strict policy must detect the checkpoint left behind by the renamed processor
+        var exception = await Assert.ThrowsAnyAsync<InvalidOperationException>(act);
+        Assert.Contains("OldProcessorName", exception.Message);
     }
 
     [Fact]
@@ -335,23 +336,22 @@ public class OrphanCheckpointTests
             resyncInterval: TimeSpan.FromHours(1));
 
         // The decorator must honour the inner store's opt-out via CanEnumerate.
-        ((ICheckpointInventory)caching).CanEnumerate.Should().BeFalse(
-            "a decorator wrapping a non-inventory store must report CanEnumerate = false");
+        Assert.False(((ICheckpointInventory)caching).CanEnumerate, "a decorator wrapping a non-inventory store must report CanEnumerate = false");
 
         // The resolution pattern must yield null when CanEnumerate is false.
         ICheckpointInventory? resolved =
             caching is ICheckpointInventory { CanEnumerate: true } inv ? inv : null;
-        resolved.Should().BeNull(
-            "the resolution pattern must return null for a store that cannot enumerate, " +
-            "not an ICheckpointInventory that would return an empty list and look like an all-clear");
+        // the resolution pattern must return null for a store that cannot enumerate, not an
+        // ICheckpointInventory that would return an empty list and look like an all-clear
+        Assert.Null(resolved);
 
         // Passing null to the hosted service under Strict must skip the check, not pass it.
         // "Skip" is the correct outcome: "we don't know" is better than a false all-clear.
         var definition = Definition(OrphanCheckpointPolicy.Strict, "ActiveProcessor");
         var act = () => RunAsync(definition, inventory: null);
 
-        await act.Should().NotThrowAsync(
-            "when the store cannot enumerate, the orphan check is skipped — not passed");
+        // when the store cannot enumerate, the orphan check is skipped — not passed
+        await act();
     }
 
     // -----------------------------------------------------------------------
@@ -447,8 +447,8 @@ public class OrphanCheckpointTests
         // Pin the override assumption: if last-registration-wins ever stops applying here,
         // the rest of the test would pass vacuously (InMemoryFencedCheckpointStore.CanEnumerate
         // is true, ListProcessorIdsAsync runs on the inner store, and the count stays 0).
-        sp.GetKeyedService<ICheckpointStore>("orders").Should().BeSameAs(decorator,
-            "the last AddKeyedSingleton registration must win for GetKeyedService (singular)");
+        // the last AddKeyedSingleton registration must win for GetKeyedService (singular)
+        Assert.Same(decorator, sp.GetKeyedService<ICheckpointStore>("orders"));
 
         // OrphanCheckpointHostedService is registered as IHostedService by AddAlberto.
         // Starting it exercises the production resolution expression.
@@ -460,9 +460,9 @@ public class OrphanCheckpointTests
         // The production expression must have returned null (CanEnumerate: false → opted-out).
         // If the expression were reverted to the old `as ICheckpointInventory` cast, the
         // decorator would be non-null, ListProcessorIdsAsync would be called, and this fails.
-        decorator.ListProcessorIdsAsyncCallCount.Should().Be(0,
-            "the production resolution site must treat CanEnumerate: false as opted-out and " +
-            "never call ListProcessorIdsAsync on a store that cannot enumerate");
+        // the production resolution site must treat CanEnumerate: false as opted-out and never call
+        // ListProcessorIdsAsync on a store that cannot enumerate
+        Assert.Equal(0, decorator.ListProcessorIdsAsyncCallCount);
     }
 
     /// <summary>
@@ -531,17 +531,17 @@ public class OrphanCheckpointTests
 
         await using var sp = services.BuildServiceProvider();
 
-        sp.GetKeyedService<ICheckpointStore>("orders").Should().BeSameAs(store,
-            "the last AddKeyedSingleton registration must win for GetKeyedService (singular)");
+        // the last AddKeyedSingleton registration must win for GetKeyedService (singular)
+        Assert.Same(store, sp.GetKeyedService<ICheckpointStore>("orders"));
 
         var orphanService = sp.GetServices<IHostedService>()
             .OfType<OrphanCheckpointHostedService>()
             .Single();
         await orphanService.StartAsync(cancellationToken);
 
-        store.ListProcessorIdsAsyncCallCount.Should().Be(1,
-            "a store that implements ICheckpointInventory without overriding CanEnumerate must " +
-            "still be asked for its inventory — the default is opt-in, not opt-out");
+        // a store that implements ICheckpointInventory without overriding CanEnumerate must still be
+        // asked for its inventory — the default is opt-in, not opt-out
+        Assert.Equal(1, store.ListProcessorIdsAsyncCallCount);
     }
 
     [Fact]
@@ -610,7 +610,7 @@ public class OrphanCheckpointTests
         // After the sweep the shadow checkpoint row must be gone. Without the ClearAsync fix
         // it would survive, and the next call to OrphanCheckpointHostedService.StartAsync under
         // a Strict policy would throw — bricking every restart until the row was hand-deleted.
-        (await checkpointStore.GetAsync(shadowKey, cancellationToken)).Should().BeNull(
-            "ClearAsync must call checkpoints.ResetAsync on the shadow key so the row cannot orphan");
+        // ClearAsync must call checkpoints.ResetAsync on the shadow key so the row cannot orphan
+        Assert.Null((await checkpointStore.GetAsync(shadowKey, cancellationToken)));
     }
 }

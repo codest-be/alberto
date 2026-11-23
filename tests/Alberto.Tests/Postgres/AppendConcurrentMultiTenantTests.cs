@@ -1,5 +1,4 @@
 using Alberto.Postgres;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Postgres;
@@ -102,8 +101,8 @@ public sealed class AppendConcurrentMultiTenantTests(MultiTenantDbFixture fixtur
                 failures.Add($"Round {round}: TenantB received {bWrongTenant.Count} events with wrong tenant");
         }
 
-        failures.Should().BeEmpty(
-            because: "every tenant's append must return exactly its own submitted events, " +
-                     "regardless of concurrent appends from other tenants on the shared sequence");
+        // every tenant's append must return exactly its own submitted events, regardless of concurrent
+        // appends from other tenants on the shared sequence
+        Assert.Empty(failures);
     }
 }

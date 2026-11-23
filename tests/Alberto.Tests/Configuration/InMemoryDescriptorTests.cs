@@ -1,7 +1,6 @@
 using Alberto;
 using Alberto.Configuration;
 using Alberto.InMemory;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -22,7 +21,7 @@ public class InMemoryDescriptorTests
         var services = new ServiceCollection();
         services.AddAlberto("orders", module => module.WithInMemory());
 
-        Resolve(services).Backend.Should().BeOfType<InMemoryBackendDescriptor>();
+        Assert.IsType<InMemoryBackendDescriptor>(Resolve(services).Backend);
     }
 
     [Fact]
@@ -31,9 +30,8 @@ public class InMemoryDescriptorTests
         var services = new ServiceCollection();
         services.AddAlberto("orders", module => module.WithInMemory());
 
-        new AlbertoModuleValidator()
-            .Collect(Resolve(services))
-            .Should().NotContain(f => f.Code == "ALB0001");
+        Assert.DoesNotContain(new AlbertoModuleValidator()
+            .Collect(Resolve(services)), f => f.Code == "ALB0001");
     }
 
     [Fact]
@@ -52,9 +50,8 @@ public class InMemoryDescriptorTests
             captured = module.Definition;
         });
 
-        new AlbertoModuleValidator()
-            .Collect(captured!)
-            .Should().NotContain(f => f.Code == "ALB0003");
+        Assert.DoesNotContain(new AlbertoModuleValidator()
+            .Collect(captured!), f => f.Code == "ALB0003");
     }
 
     [Fact]
@@ -72,7 +69,7 @@ public class InMemoryDescriptorTests
             await host.StopAsync(TestContext.Current.CancellationToken);
         };
 
-        await act.Should().NotThrowAsync();
+        await act();
     }
 
     [Fact]
@@ -81,8 +78,7 @@ public class InMemoryDescriptorTests
         var services = new ServiceCollection();
         services.AddAlberto("orders", module => module.WithInMemory("shared"));
 
-        Resolve(services).Backend.Should().BeOfType<InMemoryBackendDescriptor>()
-            .Which.SharedModuleKey.Should().Be("shared");
+        Assert.Equal("shared", Assert.IsType<InMemoryBackendDescriptor>(Resolve(services).Backend).SharedModuleKey);
     }
 
     [Fact]
@@ -99,9 +95,8 @@ public class InMemoryDescriptorTests
             captured = module.Definition;
         });
 
-        new AlbertoModuleValidator()
-            .Collect(captured!)
-            .Should().ContainSingle(f => f.Code == "ALB0017");
+        Assert.Single(new AlbertoModuleValidator()
+            .Collect(captured!), f => f.Code == "ALB0017");
     }
 
     [Fact]
@@ -117,9 +112,8 @@ public class InMemoryDescriptorTests
             captured = module.Definition;
         });
 
-        new AlbertoModuleValidator()
-            .Collect(captured!)
-            .Should().NotContain(f => f.Code == "ALB0017");
+        Assert.DoesNotContain(new AlbertoModuleValidator()
+            .Collect(captured!), f => f.Code == "ALB0017");
     }
 
     [Fact]
@@ -135,18 +129,18 @@ public class InMemoryDescriptorTests
             await host.StopAsync(TestContext.Current.CancellationToken);
         };
 
-        await act.Should().NotThrowAsync();
-        host.Services.GetRequiredKeyedService<IEventStore>("orders").Should().NotBeNull();
+        await act();
+        Assert.NotNull(host.Services.GetRequiredKeyedService<IEventStore>("orders"));
     }
 
     [Fact]
     public void WithInMemory_rejects_a_null_builder_or_a_blank_shared_module_key()
     {
-        FluentActions.Invoking(() => InMemoryBuilderExtensions.WithInMemory(null!))
-            .Should().Throw<ArgumentNullException>().WithParameterName("builder");
-        FluentActions.Invoking(() => InMemoryBuilderExtensions.WithInMemory(null!, "orders"))
-            .Should().Throw<ArgumentNullException>().WithParameterName("builder");
-        FluentActions.Invoking(() => new AlbertoModuleBuilder("payments").WithInMemory(" "))
-            .Should().Throw<ArgumentException>().WithParameterName("sharedModuleKey");
+        var exception = Assert.ThrowsAny<ArgumentNullException>(() => InMemoryBuilderExtensions.WithInMemory(null!));
+        Assert.Equal("builder", exception.ParamName);
+        var exception2 = Assert.ThrowsAny<ArgumentNullException>(() => InMemoryBuilderExtensions.WithInMemory(null!, "orders"));
+        Assert.Equal("builder", exception2.ParamName);
+        var exception3 = Assert.ThrowsAny<ArgumentException>(() => new AlbertoModuleBuilder("payments").WithInMemory(" "));
+        Assert.Equal("sharedModuleKey", exception3.ParamName);
     }
 }

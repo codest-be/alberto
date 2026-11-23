@@ -3,7 +3,6 @@ using System.Text.Json;
 using Alberto.InMemory;
 using Alberto.Subscriptions;
 using Alberto.Tenancy;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -98,12 +97,12 @@ public sealed class MultiTypeReactorTests
         var processor = ProcessorOf(provider);
         var token = TestContext.Current.CancellationToken;
 
-        processor.HandledEventTypes.Should().BeEquivalentTo("multi-reactor-signed", "multi-reactor-revised");
+        Assert.Equivalent(new[] { "multi-reactor-signed", "multi-reactor-revised" }, processor.HandledEventTypes, strict: true);
         await processor.ProcessEventAsync(Envelope(new Signed("d1"), 1), token);
         await processor.ProcessEventAsync(Envelope(new Revised("d1"), 2), token);
         await processor.ProcessEventAsync(Envelope(new Other("d1"), 3), token);
 
-        recorder.Calls.Select(c => (c.Kind, c.DocumentId)).Should().Equal(("signed", "d1"), ("revised", "d1"));
+        Assert.Equal([("signed", "d1"), ("revised", "d1")], recorder.Calls.Select(c => (c.Kind, c.DocumentId)));
     }
 
     [Fact]
@@ -114,7 +113,7 @@ public sealed class MultiTypeReactorTests
 
         await ProcessorOf(provider).ProcessEventAsync(Envelope(new Revised("d1"), 42), TestContext.Current.CancellationToken);
 
-        recorder.Calls.Single().Position.Should().Be(42);
+        Assert.Equal(42, recorder.Calls.Single().Position);
     }
 
     [Fact]
@@ -128,8 +127,8 @@ public sealed class MultiTypeReactorTests
             [Envelope(new Signed("d1"), 1, "t1"), Envelope(new Revised("d1"), 2, "t2")],
             TestContext.Current.CancellationToken);
 
-        recorder.HandlerInstances.Distinct().Should().HaveCount(2);
-        recorder.Tenants.Should().Equal("t1", "t2");
+        Assert.Equal(2, recorder.HandlerInstances.Distinct().Count());
+        Assert.Equal(["t1", "t2"], recorder.Tenants);
     }
 
     [Fact]
@@ -137,7 +136,8 @@ public sealed class MultiTypeReactorTests
     {
         var act = () => Build(new Recorder("a"), b => b.React<Handler>("multi", _ => { }));
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*multi*no event types*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        Assert.Matches("(?is)multi.*no event types", exception.Message);
     }
 
     [Fact]
@@ -147,7 +147,8 @@ public sealed class MultiTypeReactorTests
             .On<Signed>((h, e, ct) => h.Run("a", e.DocumentId, 0, ct))
             .On<Signed>((h, e, ct) => h.Run("b", e.DocumentId, 0, ct))));
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*Signed*already handled*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        Assert.Matches("(?is)Signed.*already handled", exception.Message);
     }
 
     [Fact]
@@ -207,10 +208,14 @@ public sealed class MultiTypeReactorTests
         }
 
         var calls = recorders.SelectMany(r => r.Calls).OrderBy(c => c.Start).ToList();
-        calls.Should().HaveCount(8);
-        calls.Select(c => c.Kind).Should().Equal("signed", "revised", "signed", "revised", "signed", "revised", "signed", "revised");
-        calls.Select(c => c.Position).Should().BeInAscendingOrder();
-        calls.Zip(calls.Skip(1)).Should().OnlyContain(p => p.First.End <= p.Second.Start, "one lease means one handler call at a time");
-        calls.Select(c => c.Replica).Distinct().Should().HaveCount(1, "only the lease holder handles events");
+        Assert.Equal(8, calls.Count());
+        Assert.Equal(["signed", "revised", "signed", "revised", "signed", "revised", "signed", "revised"], calls.Select(c => c.Kind));
+        Assert.Equal(calls.Select(c => c.Position).Order(), calls.Select(c => c.Position));
+        // one lease means one handler call at a time
+        var items = calls.Zip(calls.Skip(1));
+        Assert.NotEmpty(items);
+        Assert.All(items, p => Assert.True(p.First.End <= p.Second.Start));
+        // only the lease holder handles events
+        Assert.Single(calls.Select(c => c.Replica).Distinct());
     }
 }

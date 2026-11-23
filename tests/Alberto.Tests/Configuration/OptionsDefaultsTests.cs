@@ -1,5 +1,4 @@
 using Alberto.Configuration;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Configuration;
@@ -11,19 +10,19 @@ public class OptionsDefaultsTests
     {
         var options = new ControlLoopOptions();
 
-        options.PollingInterval.Should().Be(TimeSpan.FromMilliseconds(250));
-        options.BatchSize.Should().Be(100);
-        options.HeadRefreshInterval.Should().Be(TimeSpan.FromMilliseconds(100));
-        options.HeadWindowSize.Should().Be(2000);
-        options.Retry.MaxRetries.Should().Be(3);
-        options.DeadLetterRetry.BatchSize.Should().Be(10);
-        options.Leases.Enabled.Should().BeFalse();
+        Assert.Equal(TimeSpan.FromMilliseconds(250), options.PollingInterval);
+        Assert.Equal(100, options.BatchSize);
+        Assert.Equal(TimeSpan.FromMilliseconds(100), options.HeadRefreshInterval);
+        Assert.Equal(2000, options.HeadWindowSize);
+        Assert.Equal(3, options.Retry.MaxRetries);
+        Assert.Equal(10, options.DeadLetterRetry.BatchSize);
+        Assert.False(options.Leases.Enabled);
     }
 
     [Fact]
     public void ControlLoopOptions_Default_is_equal_to_a_fresh_instance()
     {
-        ControlLoopOptions.Default.Should().Be(new ControlLoopOptions());
+        Assert.Equal(new ControlLoopOptions(), ControlLoopOptions.Default);
     }
 
     [Fact]
@@ -33,7 +32,7 @@ public class OptionsDefaultsTests
 
         var result = new ControlLoopOverrides().ApplyTo(options);
 
-        result.Should().Be(options);
+        Assert.Equal(options, result);
     }
 
     [Fact]
@@ -46,9 +45,9 @@ public class OptionsDefaultsTests
             Retry = new RetryOverrides { MaxRetries = 9 },
         }.ApplyTo(options);
 
-        result.Retry.MaxRetries.Should().Be(9);
-        result.Retry.RetryDelay.Should().Be(options.Retry.RetryDelay);
-        result.BatchSize.Should().Be(options.BatchSize);
+        Assert.Equal(9, result.Retry.MaxRetries);
+        Assert.Equal(options.Retry.RetryDelay, result.Retry.RetryDelay);
+        Assert.Equal(options.BatchSize, result.BatchSize);
     }
 
     [Theory]
@@ -58,14 +57,13 @@ public class OptionsDefaultsTests
     [InlineData(20, 30000)]
     public void CalculateDelay_backs_off_exponentially_and_caps(int attempt, int expectedMilliseconds)
     {
-        new RetryOptions()
-            .CalculateDelay(attempt)
-            .Should().Be(TimeSpan.FromMilliseconds(expectedMilliseconds));
+        Assert.Equal(TimeSpan.FromMilliseconds(expectedMilliseconds), new RetryOptions()
+            .CalculateDelay(attempt));
     }
 
     [Fact]
     public void CheckpointOptions_defaults_to_Warn()
     {
-        new CheckpointOptions().OrphanPolicy.Should().Be(OrphanCheckpointPolicy.Warn);
+        Assert.Equal(OrphanCheckpointPolicy.Warn, new CheckpointOptions().OrphanPolicy);
     }
 }

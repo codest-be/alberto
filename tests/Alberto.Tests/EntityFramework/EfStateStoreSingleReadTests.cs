@@ -3,7 +3,6 @@ using Alberto.EntityFramework;
 using Alberto.InMemory;
 using Alberto.Projections;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,10 +39,11 @@ public sealed class EfStateStoreSingleReadTests(EfProjectionTestFixture fixture)
             EfTestEnvelopes.ForCounterIncremented(c, 4, position: 5),
             EfTestEnvelopes.ForCounterIncremented(a, 5, position: 6));
 
-        reads.Count.Should().Be(1, "the batch's documents are read once and written through the same context");
-        (await fixture.ReadEntityAsync(a))!.Counter.Should().Be(8);
-        (await fixture.ReadEntityAsync(b))!.Counter.Should().Be(4);
-        (await fixture.ReadEntityAsync(c))!.Counter.Should().Be(4);
+        // the batch's documents are read once and written through the same context
+        Assert.Equal(1, reads.Count);
+        Assert.Equal(8, (await fixture.ReadEntityAsync(a))!.Counter);
+        Assert.Equal(4, (await fixture.ReadEntityAsync(b))!.Counter);
+        Assert.Equal(4, (await fixture.ReadEntityAsync(c))!.Counter);
     }
 
     [Fact]
@@ -62,9 +62,9 @@ public sealed class EfStateStoreSingleReadTests(EfProjectionTestFixture fixture)
             EfTestEnvelopes.ForCounterIncremented(written, 1, position: 3),
             EfTestEnvelopes.ForCounterIncremented(untouched, 0, position: 4));
 
-        (await fixture.ReadEntityAsync(written))!.Counter.Should().Be(2);
-        (await fixture.ReadEntityAsync(untouched))!.Counter.Should().Be(1,
-            "a document the handler left Unchanged is not written, whatever it did to the instance");
+        Assert.Equal(2, (await fixture.ReadEntityAsync(written))!.Counter);
+        // a document the handler left Unchanged is not written, whatever it did to the instance
+        Assert.Equal(1, (await fixture.ReadEntityAsync(untouched))!.Counter);
     }
 
     private (IBatchableProcessor Processor, ReadCounter Reads) Build()

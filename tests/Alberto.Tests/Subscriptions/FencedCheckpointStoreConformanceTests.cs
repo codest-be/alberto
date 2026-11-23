@@ -2,7 +2,6 @@ using Alberto.Checkpoints;
 using Alberto.Leases;
 using Alberto.Testing.Xunit;
 using Alberto.InMemory;
-using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -95,8 +94,7 @@ public sealed class InMemoryFencedCheckpointStoreAdapterTests
         if (operation == "save") await store.SaveAsync("proc", 20);
         else await store.RewindAsync("proc", 3);
 
-        (await store.SaveIfLeaseHeldAsync("proc", 30, "consumer", "replica", lease!.FenceToken, useProcessorLeaseFencing: true))
-            .Should().BeFalse();
+        Assert.False((await store.SaveIfLeaseHeldAsync("proc", 30, "consumer", "replica", lease!.FenceToken, useProcessorLeaseFencing: true)));
     }
 
     [Fact]
@@ -106,7 +104,7 @@ public sealed class InMemoryFencedCheckpointStoreAdapterTests
         await store.SaveAsync("a", 1);
         await store.RewindAsync("b", 2);
 
-        (await store.ListProcessorIdsAsync()).Should().BeEquivalentTo(["a", "b"]);
+        Assert.Equivalent(new[] { "a", "b" }, (await store.ListProcessorIdsAsync()), strict: true);
     }
 }
 

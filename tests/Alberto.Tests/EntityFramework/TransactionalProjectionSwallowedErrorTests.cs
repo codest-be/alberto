@@ -4,7 +4,6 @@ using Alberto.Projections;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Microsoft.Extensions.DependencyInjection;
-using FluentAssertions;
 using Xunit;
 using static Alberto.Tests.EntityFramework.EfInlineProjectionOrderingTests;
 
@@ -40,8 +39,8 @@ public sealed class TransactionalProjectionSwallowedErrorTests(EfEventStoreFixtu
         IReadOnlyCollection<IEventEnvelope>? result = null;
         try { result = await store.AppendAsync([ev], cancellationToken: ct); } catch (Exception e) { thrown = e; }
         var read = await store.ReadAsync(DcbQuery.ByTags(new EventTag("probe", marker).Value), 0, 100, ct);
-        thrown.Should().BeOfType<InvalidOperationException>();
-        result.Should().BeNull();
-        read.Should().BeEmpty();
+        Assert.IsType<InvalidOperationException>(thrown);
+        Assert.Null(result);
+        Assert.Empty(read);
     }
 }

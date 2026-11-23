@@ -1,7 +1,6 @@
 using Alberto.Configuration;
 using Alberto.Postgres;
 using Alberto.Tests.Infrastructure;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -38,7 +37,7 @@ public sealed class MigrationHostedServiceShutdownTests
 
         var stop = () => service.StopAsync(CancellationToken.None);
 
-        await stop.Should().NotThrowAsync();
+        await stop();
     }
 
     [Fact]
@@ -52,7 +51,7 @@ public sealed class MigrationHostedServiceShutdownTests
         service.Dispose();
 
         var stop = () => service.StopAsync(CancellationToken.None);
-        await stop.Should().NotThrowAsync();
+        await stop();
     }
 }
 
@@ -90,7 +89,7 @@ public sealed class MigrationHostShutdownTests(PostgresCluster cluster)
 
         var stopAgain = () => host.StopAsync(cancellationToken);
 
-        await stopAgain.Should().NotThrowAsync();
+        await stopAgain();
     }
 
     [Fact]
@@ -117,7 +116,7 @@ public sealed class MigrationHostShutdownTests(PostgresCluster cluster)
 
         var stop = () => host.StopAsync(cancellationToken);
 
-        await stop.Should().NotThrowAsync();
-        await stop.Should().NotThrowAsync();
+        await stop();
+        await stop();
     }
 }

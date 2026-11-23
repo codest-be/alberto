@@ -1,7 +1,6 @@
 using Alberto.InMemory;
 using Alberto.Projections;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -31,8 +30,7 @@ public sealed class RebuildPollingAndSweepTests
             await Task.Delay(20, ct);
         }
 
-        (store.Lists - manual).Should().BeLessThanOrEqualTo(1,
-            "the loop's own first read is the only one it makes while the coordinator refreshes every tick");
+        Assert.True((store.Lists - manual) <= 1, "the loop's own first read is the only one it makes while the coordinator refreshes every tick");
     }
 
     [Fact]
@@ -46,7 +44,7 @@ public sealed class RebuildPollingAndSweepTests
         while (store.Lists < 3 && DateTime.UtcNow < deadline)
             await Task.Delay(10, ct);
 
-        store.Lists.Should().BeGreaterThanOrEqualTo(3);
+        Assert.True(store.Lists >= 3);
     }
 
     [Fact]
@@ -63,24 +61,26 @@ public sealed class RebuildPollingAndSweepTests
 
         await coordinator.StartAsync(ct);
         await Task.Delay(200, ct);
-        store.Discarded.Should().BeEmpty("the grace period has not elapsed");
+        // the grace period has not elapsed
+        Assert.Empty(store.Discarded);
 
         time.Advance(grace);
         await WaitForAsync(() => store.Discarded.Count >= 2, ct);
-        store.Discarded.Should().Equal(1, 2);
+        Assert.Equal([1, 2], store.Discarded);
 
         // An aborted rebuild burned version 4. Only it can hold state now; 1 and 2 were cleared
         // and numbers are never reused, so they are not swept again.
         store.State = Settled(RebuildStatus.Aborted, active: 3, allocated: 4, time.GetUtcNow());
         await Task.Delay(200, ct);
-        store.Discarded.Should().Equal([1, 2], "the abort is still inside its grace period");
+        // the abort is still inside its grace period
+        Assert.Equal([1, 2], store.Discarded);
 
         time.Advance(grace);
         await WaitForAsync(() => store.Discarded.Count >= 3, ct);
         await Task.Delay(200, ct);
 
         await coordinator.StopAsync(ct);
-        store.Discarded.Should().Equal(1, 2, 4);
+        Assert.Equal([1, 2, 4], store.Discarded);
     }
 
     private static ProjectionRebuildState Settled(RebuildStatus status, int active, int allocated, DateTimeOffset completedAt) =>

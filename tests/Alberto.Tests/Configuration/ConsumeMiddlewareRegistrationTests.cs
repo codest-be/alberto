@@ -1,7 +1,6 @@
 using Alberto;
 using Alberto.InMemory;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -29,9 +28,7 @@ public class ConsumeMiddlewareRegistrationTests
 
         var provider = services.BuildServiceProvider();
 
-        provider.GetKeyedServices<ConsumeMiddleware>("orders")
-            .Should().ContainSingle()
-            .Which.Should().BeSameAs(stub);
+        Assert.Same(stub, Assert.Single(provider.GetKeyedServices<ConsumeMiddleware>("orders")));
     }
 
     [Fact]
@@ -45,9 +42,7 @@ public class ConsumeMiddlewareRegistrationTests
 
         var provider = services.BuildServiceProvider();
 
-        provider.GetKeyedServices<BatchConsumeMiddleware>("orders")
-            .Should().ContainSingle()
-            .Which.Should().BeSameAs(stub);
+        Assert.Same(stub, Assert.Single(provider.GetKeyedServices<BatchConsumeMiddleware>("orders")));
     }
 
     [Fact]
@@ -61,8 +56,7 @@ public class ConsumeMiddlewareRegistrationTests
 
         var provider = services.BuildServiceProvider();
 
-        provider.GetKeyedService<IErrorClassifier>("orders")
-            .Should().BeSameAs(classifier);
+        Assert.Same(classifier, provider.GetKeyedService<IErrorClassifier>("orders"));
     }
 
     [Fact]
@@ -75,7 +69,6 @@ public class ConsumeMiddlewareRegistrationTests
 
         var provider = services.BuildServiceProvider();
 
-        provider.GetKeyedService<IErrorClassifier>("orders")
-            .Should().BeOfType<StubErrorClassifier>();
+        Assert.IsType<StubErrorClassifier>(provider.GetKeyedService<IErrorClassifier>("orders"));
     }
 }

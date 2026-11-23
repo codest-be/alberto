@@ -3,7 +3,6 @@ using Alberto.Configuration;
 using Alberto.InMemory;
 using Alberto.Checkpoints;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
@@ -31,9 +30,9 @@ public class ProcessorHealthWiringMutationTests
 
         var snapshot = state.Get("never-reported");
 
-        snapshot.IsFaulted.Should().BeFalse();
-        snapshot.Lag.Should().Be(0);
-        snapshot.HasReported.Should().BeFalse();
+        Assert.False(snapshot.IsFaulted);
+        Assert.Equal(0, snapshot.Lag);
+        Assert.False(snapshot.HasReported);
     }
 
     #endregion
@@ -51,8 +50,8 @@ public class ProcessorHealthWiringMutationTests
 
         var result = await Check(state, time, degradedLagThreshold: 100);
 
-        result.Status.Should().Be(HealthStatus.Healthy);
-        result.Data["orders-proj"].Should().Be("healthy");
+        Assert.Equal(HealthStatus.Healthy, result.Status);
+        Assert.Equal("healthy", result.Data["orders-proj"]);
     }
 
     private static Task<HealthCheckResult> Check(
@@ -92,13 +91,13 @@ public class ProcessorHealthWiringMutationTests
         fakeTime.Advance(TimeSpan.FromSeconds(20));
         var stillHealthy = await check.CheckHealthAsync(
             new HealthCheckContext { Registration = registration }, TestContext.Current.CancellationToken);
-        stillHealthy.Status.Should().Be(HealthStatus.Healthy);
+        Assert.Equal(HealthStatus.Healthy, stillHealthy.Status);
 
         // Cross the real 50s threshold (20s + 31s = 51s).
         fakeTime.Advance(TimeSpan.FromSeconds(31));
         var nowUnhealthy = await check.CheckHealthAsync(
             new HealthCheckContext { Registration = registration }, TestContext.Current.CancellationToken);
-        nowUnhealthy.Status.Should().Be(HealthStatus.Unhealthy);
+        Assert.Equal(HealthStatus.Unhealthy, nowUnhealthy.Status);
     }
 
     /// <summary>
@@ -130,7 +129,7 @@ public class ProcessorHealthWiringMutationTests
         fakeTime.Advance(TimeSpan.FromSeconds(4));
         var result = await check.CheckHealthAsync(
             new HealthCheckContext { Registration = registration }, TestContext.Current.CancellationToken);
-        result.Status.Should().Be(HealthStatus.Healthy);
+        Assert.Equal(HealthStatus.Healthy, result.Status);
     }
 
     private static HealthCheckRegistration GetRegistration(IServiceProvider sp, string name) =>
@@ -173,8 +172,7 @@ public class ProcessorHealthWiringMutationTests
         for (var i = hostedServices.Count - 1; i >= 0; i--)
             await hostedServices[i].StopAsync(CancellationToken.None);
 
-        spy.ClassifyCallCount.Should().BeGreaterThan(0,
-            "the keyed IErrorClassifier registered for the module must be consulted on fault");
+        Assert.True(spy.ClassifyCallCount > 0, "the keyed IErrorClassifier registered for the module must be consulted on fault");
     }
 
     /// <summary>
@@ -201,7 +199,7 @@ public class ProcessorHealthWiringMutationTests
         await WaitForAsync(() => head.Current >= 1, TestContext.Current.CancellationToken);
         await head.StopAsync(CancellationToken.None);
 
-        head.Current.Should().Be(1);
+        Assert.Equal(1, head.Current);
     }
 
     private sealed class SpyErrorClassifier : IErrorClassifier
@@ -262,8 +260,7 @@ public class ProcessorHealthWiringMutationTests
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
 
-        batchMiddleware.SeenBatchCount.Should().BeGreaterThan(0,
-            "the DI-supplied batch middleware must be part of the assembled batch chain");
+        Assert.True(batchMiddleware.SeenBatchCount > 0, "the DI-supplied batch middleware must be part of the assembled batch chain");
     }
 
     private sealed class RecordingBatchMiddleware
@@ -311,8 +308,8 @@ public class ProcessorHealthWiringMutationTests
             pollingInterval: TimeSpan.FromMilliseconds(10), batchSize: 100, moduleKey: "test",
             executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Disabled });
 
-        fencableStore.Handler.Should().NotBeNull(
-            "the assembler must subscribe a fence-violation handler on a fencable checkpoint store");
+        // the assembler must subscribe a fence-violation handler on a fencable checkpoint store
+        Assert.NotNull(fencableStore.Handler);
     }
 
     /// <summary>Kills ControlLoopAssembler.cs:134 (violatingProcessorId == loop.ProcessorId → !=):
@@ -333,11 +330,10 @@ public class ProcessorHealthWiringMutationTests
         await head.StartAsync(cts.Token);
         await loop.StartAsync(cts.Token);
 
-        fencableStore.Handler.Should().NotBeNull();
+        Assert.NotNull(fencableStore.Handler);
         fencableStore.Handler!.Invoke("some-other-processor");
 
-        GetLoopCts(loop)!.IsCancellationRequested.Should().BeFalse(
-            "a fence violation for a different processor id must not cancel this loop");
+        Assert.False(GetLoopCts(loop)!.IsCancellationRequested, "a fence violation for a different processor id must not cancel this loop");
 
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
@@ -362,11 +358,10 @@ public class ProcessorHealthWiringMutationTests
         await head.StartAsync(cts.Token);
         await loop.StartAsync(cts.Token);
 
-        fencableStore.Handler.Should().NotBeNull();
+        Assert.NotNull(fencableStore.Handler);
         fencableStore.Handler!.Invoke(loop.ProcessorId);
 
-        GetLoopCts(loop)!.IsCancellationRequested.Should().BeTrue(
-            "a fence violation for this loop's own processor id must cancel it");
+        Assert.True(GetLoopCts(loop)!.IsCancellationRequested, "a fence violation for this loop's own processor id must cancel it");
 
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);

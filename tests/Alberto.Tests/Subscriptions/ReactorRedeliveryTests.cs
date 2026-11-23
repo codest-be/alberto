@@ -4,7 +4,6 @@ using Alberto.InMemory;
 using Alberto.DeadLetters;
 using Alberto.Subscriptions;
 using Alberto.Telemetry;
-using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -174,20 +173,21 @@ public sealed class ReactorRedeliveryTests
         await rig.PumpUntilAsync(async () => (await rig.RowsAsync()).Count == 1, "the event is dead-lettered", TimeSpan.FromSeconds(1));
 
         var row = (await rig.RowsAsync()).Single();
-        row.NextRetryAt.Should().Be(row.FailedAt + TimeSpan.FromMinutes(1), "the first redelivery waits the first delay");
-        row.RedeliveryCount.Should().Be(0);
+        // the first redelivery waits the first delay
+        Assert.Equal(row.FailedAt + TimeSpan.FromMinutes(1), row.NextRetryAt);
+        Assert.Equal(0, row.RedeliveryCount);
 
         // Not due yet: the clock is still short of next_retry_at, so nothing is dispatched again.
         var deliveries = rig.Reactor.Deliveries;
         rig.Clock.Advance(TimeSpan.FromSeconds(20));
         await Task.Delay(50, TestContext.Current.CancellationToken);
-        rig.Reactor.Deliveries.Should().Be(deliveries);
+        Assert.Equal(deliveries, rig.Reactor.Deliveries);
 
         // The failure clears, the clock reaches next_retry_at, the event is handled and the row is gone.
         rig.Reactor.Failure = null;
         await rig.PumpUntilAsync(async () => (await rig.RowsAsync()).Count == 0, "the redelivery succeeds");
 
-        rig.Reactor.Handled.Should().Equal("poison");
+        Assert.Equal(["poison"], rig.Reactor.Handled);
     }
 
     [Fact]
@@ -207,24 +207,25 @@ public sealed class ReactorRedeliveryTests
         }, "both redeliveries fail", TimeSpan.FromSeconds(5));
 
         // The same row all the way, waiting 1 min, then 4 min, then parked.
-        seen.Values.Select(v => v.Id).Distinct().Should().HaveCount(1);
-        seen[0].Wait.Should().Be(TimeSpan.FromMinutes(1));
-        seen[1].Wait.Should().Be(TimeSpan.FromMinutes(4));
-        seen[2].Wait.Should().BeNull("the last redelivery failed, so the row stays for manual retry");
+        Assert.Single(seen.Values.Select(v => v.Id).Distinct());
+        Assert.Equal(TimeSpan.FromMinutes(1), seen[0].Wait);
+        Assert.Equal(TimeSpan.FromMinutes(4), seen[1].Wait);
+        // the last redelivery failed, so the row stays for manual retry
+        Assert.Null(seen[2].Wait);
 
         // Parked: days pass and nothing is dispatched.
         await rig.PumpUntilAsync(async () => await Task.FromResult(true), "settle");
         var deliveries = rig.Reactor.Deliveries;
         rig.Clock.Advance(TimeSpan.FromDays(5));
         await Task.Delay(100, TestContext.Current.CancellationToken);
-        rig.Reactor.Deliveries.Should().Be(deliveries);
-        (await rig.RowsAsync()).Should().ContainSingle().Which.NextRetryAt.Should().BeNull();
+        Assert.Equal(deliveries, rig.Reactor.Deliveries);
+        Assert.Null(Assert.Single((await rig.RowsAsync())).NextRetryAt);
 
         // A manual retry still redelivers the exhausted row.
         rig.Reactor.Failure = null;
         await rig.DeadLetters.MarkForRetryAsync(Id, TestContext.Current.CancellationToken);
         await rig.PumpUntilAsync(async () => (await rig.RowsAsync()).Count == 0, "manual retry of the exhausted row");
-        rig.Reactor.Handled.Should().Equal("poison");
+        Assert.Equal(["poison"], rig.Reactor.Handled);
     }
 
     [Fact]
@@ -236,7 +237,7 @@ public sealed class ReactorRedeliveryTests
         await rig.AppendAsync("poison");
         await rig.PumpUntilAsync(async () => (await rig.RowsAsync()).Count == 1, "the event is dead-lettered", TimeSpan.FromSeconds(1));
 
-        (await rig.RowsAsync()).Single().NextRetryAt.Should().BeNull();
+        Assert.Null((await rig.RowsAsync()).Single().NextRetryAt);
     }
 
     [Fact]
@@ -248,7 +249,7 @@ public sealed class ReactorRedeliveryTests
         await rig.AppendAsync("poison");
         await rig.PumpUntilAsync(async () => (await rig.RowsAsync()).Count == 1, "the event is dead-lettered", TimeSpan.FromSeconds(1));
 
-        (await rig.RowsAsync()).Single().NextRetryAt.Should().BeNull();
+        Assert.Null((await rig.RowsAsync()).Single().NextRetryAt);
     }
 
     [Fact]
@@ -266,7 +267,7 @@ public sealed class ReactorRedeliveryTests
         await rig.PumpUntilAsync(async () => (await rig.RowsAsync()).Count == 1, "the event is dead-lettered", TimeSpan.FromSeconds(1));
 
         var row = (await rig.RowsAsync()).Single();
-        (row.NextRetryAt - row.FailedAt).Should().Be(TimeSpan.FromHours(2));
+        Assert.Equal(TimeSpan.FromHours(2), (row.NextRetryAt - row.FailedAt));
     }
 
     [Fact]
@@ -281,7 +282,7 @@ public sealed class ReactorRedeliveryTests
         await rig.AppendAsync("poison");
         await rig.PumpUntilAsync(async () => (await rig.RowsAsync()).Count == 1, "the event is dead-lettered", TimeSpan.FromSeconds(1));
 
-        (await rig.RowsAsync()).Single().NextRetryAt.Should().BeNull();
+        Assert.Null((await rig.RowsAsync()).Single().NextRetryAt);
     }
 
     [Fact]
@@ -290,11 +291,11 @@ public sealed class ReactorRedeliveryTests
         var options = new RedeliveryOptions();
         var waits = Enumerable.Range(1, options.MaxRedeliveries).Select(options.CalculateDelay).ToArray();
 
-        waits[0].Should().Be(TimeSpan.FromMinutes(1));
-        waits[1].Should().Be(TimeSpan.FromMinutes(4));
-        waits[2].Should().Be(TimeSpan.FromMinutes(16));
-        waits[5].Should().Be(TimeSpan.FromHours(12));
-        waits[9].Should().Be(TimeSpan.FromHours(12));
-        TimeSpan.FromTicks(waits.Sum(w => w.Ticks)).TotalHours.Should().BeApproximately(65.7, 0.1);
+        Assert.Equal(TimeSpan.FromMinutes(1), waits[0]);
+        Assert.Equal(TimeSpan.FromMinutes(4), waits[1]);
+        Assert.Equal(TimeSpan.FromMinutes(16), waits[2]);
+        Assert.Equal(TimeSpan.FromHours(12), waits[5]);
+        Assert.Equal(TimeSpan.FromHours(12), waits[9]);
+        Assert.InRange(TimeSpan.FromTicks(waits.Sum(w => w.Ticks)).TotalHours, 65.7 - 0.1, 65.7 + 0.1);
     }
 }

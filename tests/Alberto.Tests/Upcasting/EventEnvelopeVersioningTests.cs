@@ -1,6 +1,6 @@
+using System.Text.RegularExpressions;
 using Alberto.InMemory;
 using Alberto.Upcasting;
-using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -51,8 +51,8 @@ public sealed class EventTypeVersionTests
         var v1 = new EventType("order-placed", 1);
         var v2 = new EventType("order-placed", 2);
 
-        v1.Should().Be(v2);
-        (v1 == v2).Should().BeTrue();
+        Assert.Equal(v2, v1);
+        Assert.True((v1 == v2));
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public sealed class EventTypeVersionTests
         var v1 = new EventType("order-placed", 1);
         var v2 = new EventType("order-placed", 2);
 
-        v1.GetHashCode().Should().Be(v2.GetHashCode());
+        Assert.Equal(v2.GetHashCode(), v1.GetHashCode());
     }
 
     [Fact]
@@ -71,15 +71,15 @@ public sealed class EventTypeVersionTests
         var v2 = new EventType("order-placed", 2);
 
         var dict = new Dictionary<EventType, string> { [v1] = "found" };
-        dict.TryGetValue(v2, out var value).Should().BeTrue();
-        value.Should().Be("found");
+        Assert.True(dict.TryGetValue(v2, out var value));
+        Assert.Equal("found", value);
     }
 
     [Fact]
     public void ToString_ReturnsId_NotVersion()
     {
         var et = new EventType("order-placed", 2);
-        et.ToString().Should().Be("order-placed");
+        Assert.Equal("order-placed", et.ToString());
     }
 
     [Fact]
@@ -87,29 +87,29 @@ public sealed class EventTypeVersionTests
     {
         var et = new EventType("order-placed", 2);
         string asString = et;
-        asString.Should().Be("order-placed");
+        Assert.Equal("order-placed", asString);
     }
 
     [Fact]
     public void FromType_ReadsVersionFromAttribute()
     {
         var et = EventType.FromType<VersionReadTestV2>();
-        et.Id.Should().Be("version-read-test");
-        et.Version.Should().Be(2);
+        Assert.Equal("version-read-test", et.Id);
+        Assert.Equal(2, et.Version);
     }
 
     [Fact]
     public void FromType_DefaultsToVersion1_WhenNoVersionSet()
     {
         var et = EventType.FromType<EventWithNoVersionAttr>();
-        et.Version.Should().Be(1);
+        Assert.Equal(1, et.Version);
     }
 
     [Fact]
     public void EventTypeAttribute_Version_DefaultsTo1()
     {
         var attr = new EventTypeAttribute("my-event");
-        attr.Version.Should().Be(1);
+        Assert.Equal(1, attr.Version);
     }
 
     [Fact]
@@ -119,15 +119,15 @@ public sealed class EventTypeVersionTests
         var set0 = () => { attr.Version = 0; };
         var setNeg = () => { attr.Version = -1; };
 
-        set0.Should().Throw<ArgumentOutOfRangeException>();
-        setNeg.Should().Throw<ArgumentOutOfRangeException>();
+        Assert.ThrowsAny<ArgumentOutOfRangeException>(set0);
+        Assert.ThrowsAny<ArgumentOutOfRangeException>(setNeg);
     }
 
     [Fact]
     public void EventType_Constructor_DefaultsToVersion1()
     {
         var et = new EventType("order-placed");
-        et.Version.Should().Be(1);
+        Assert.Equal(1, et.Version);
     }
 }
 
@@ -140,25 +140,22 @@ public sealed class ReservedTagConceptTests
     [Fact]
     public void EventTag_Constructor_Rejects_SchemaVersionConcept()
     {
-        var act = () => new EventTag(EventTag.SchemaVersionConcept, "1");
-        act.Should().Throw<ArgumentException>()
-            .WithMessage($"*{EventTag.SchemaVersionConcept}*reserved*");
+        var exception = Assert.ThrowsAny<ArgumentException>(() => new EventTag(EventTag.SchemaVersionConcept, "1"));
+        Assert.Matches($"(?is){Regex.Escape(EventTag.SchemaVersionConcept)}.*reserved", exception.Message);
     }
 
     [Fact]
     public void EventTag_Parse_Rejects_SchemaVersionConcept()
     {
-        var act = () => EventTag.Parse($"{EventTag.SchemaVersionConcept}:1");
-        act.Should().Throw<ArgumentException>()
-            .WithMessage($"*{EventTag.SchemaVersionConcept}*reserved*");
+        var exception = Assert.ThrowsAny<ArgumentException>(() => EventTag.Parse($"{EventTag.SchemaVersionConcept}:1"));
+        Assert.Matches($"(?is){Regex.Escape(EventTag.SchemaVersionConcept)}.*reserved", exception.Message);
     }
 
     [Fact]
     public void TagAttribute_Rejects_SchemaVersionConcept()
     {
-        var act = () => new TagAttribute(EventTag.SchemaVersionConcept);
-        act.Should().Throw<ArgumentException>()
-            .WithMessage($"*{EventTag.SchemaVersionConcept}*reserved*");
+        var exception = Assert.ThrowsAny<ArgumentException>(() => new TagAttribute(EventTag.SchemaVersionConcept));
+        Assert.Matches($"(?is){Regex.Escape(EventTag.SchemaVersionConcept)}.*reserved", exception.Message);
     }
 
     [Fact]
@@ -166,8 +163,8 @@ public sealed class ReservedTagConceptTests
     {
         // The read-path bypass must not throw.
         var tag = EventTag.FromStorage(EventTag.SchemaVersionConcept, "2");
-        tag.Concept.Should().Be(EventTag.SchemaVersionConcept);
-        tag.Id.Should().Be("2");
+        Assert.Equal(EventTag.SchemaVersionConcept, tag.Concept);
+        Assert.Equal("2", tag.Id);
     }
 }
 
@@ -192,7 +189,7 @@ public sealed class VersionTagStampingTests
         var evt = new StampTestV1Event(Guid.NewGuid(), 50m);
         var tags = Serializer.ExtractTags(evt);
 
-        tags.Should().Contain(t =>
+        Assert.Contains(tags, t =>
             t.Concept == EventTag.SchemaVersionConcept && t.Id == "1");
     }
 
@@ -202,7 +199,7 @@ public sealed class VersionTagStampingTests
         var evt = new StampTestV2Event(Guid.NewGuid(), 50m, "us-east");
         var tags = Serializer.ExtractTags(evt);
 
-        tags.Should().Contain(t =>
+        Assert.Contains(tags, t =>
             t.Concept == EventTag.SchemaVersionConcept && t.Id == "2");
     }
 
@@ -223,9 +220,9 @@ public sealed class VersionTagStampingTests
             cancellationToken: TestContext.Current.CancellationToken);
 
         var envelope = persisted.Single();
-        envelope.Tags.Should().Contain(t =>
-            t.Concept == EventTag.SchemaVersionConcept && t.Id == "2",
-            "version tag must survive the write→read round-trip");
+        // version tag must survive the write→read round-trip
+        Assert.Contains(envelope.Tags, t =>
+            t.Concept == EventTag.SchemaVersionConcept && t.Id == "2");
     }
 
     [Fact]
@@ -244,7 +241,7 @@ public sealed class VersionTagStampingTests
             }],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        persisted.Single().EventType.Version.Should().Be(2);
+        Assert.Equal(2, persisted.Single().EventType.Version);
     }
 
     [Fact]
@@ -264,8 +261,8 @@ public sealed class VersionTagStampingTests
             [legacy],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        persisted.Single().EventType.Version.Should().Be(1,
-            "events written before schema versioning was introduced must be treated as v1");
+        // events written before schema versioning was introduced must be treated as v1
+        Assert.Equal(1, persisted.Single().EventType.Version);
     }
 }
 
@@ -306,8 +303,8 @@ public sealed class VersionTagBoundaryTests
         var query = DcbQuery.ByAllTags(EventTag.FromStorage("order", orderId));
         var results = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
-        results.Should().HaveCount(2,
-            "ByAllTags is containment-based: the extra _v tag must not break matching");
+        // ByAllTags is containment-based: the extra _v tag must not break matching
+        Assert.Equal(2, results.Count());
     }
 
     [Fact]
@@ -328,8 +325,8 @@ public sealed class VersionTagBoundaryTests
         var query = DcbQuery.ByTypes(new EventType("order-placed"));
         var results = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
-        results.Should().HaveCount(2,
-            "ByTypes must match v1 and v2 of the same event type — version must not affect the filter key");
+        // ByTypes must match v1 and v2 of the same event type — version must not affect the filter key
+        Assert.Equal(2, results.Count());
     }
 
     [Fact]
@@ -351,8 +348,9 @@ public sealed class VersionTagBoundaryTests
         var query = DcbQuery.ByTypes(new EventType("order-placed", 2));
         var results = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
-        results.Should().HaveCount(2,
-            "a versioned EventType used as a query filter must match all versions because Version is excluded from equality");
+        // a versioned EventType used as a query filter must match all versions because Version is
+        // excluded from equality
+        Assert.Equal(2, results.Count());
     }
 }
 
@@ -378,17 +376,17 @@ public sealed class DateTimeOffsetRoundTripTests
             cancellationToken: TestContext.Current.CancellationToken);
 
         var envelope = result.Single();
-        envelope.CreatedAt.Should().Be(fixedTime);
-        envelope.CreatedAt.Offset.Should().Be(TimeSpan.Zero, "CreatedAt offset must be UTC");
+        Assert.Equal(fixedTime, envelope.CreatedAt);
+        // CreatedAt offset must be UTC
+        Assert.Equal(TimeSpan.Zero, envelope.CreatedAt.Offset);
     }
 
     [Fact]
     public void IEventEnvelope_CreatedAt_IsDateTimeOffset_CompileTimeCheck()
     {
-        typeof(IEventEnvelope)
+        Assert.Equal(typeof(DateTimeOffset), typeof(IEventEnvelope)
             .GetProperty(nameof(IEventEnvelope.CreatedAt))!
-            .PropertyType
-            .Should().Be(typeof(DateTimeOffset));
+            .PropertyType);
     }
 }
 
@@ -423,11 +421,11 @@ public sealed class UpcasterChainTests
 
         var result = s.Deserialize(envelope);
 
-        result.Should().BeOfType<UpcastOrderV3>();
+        Assert.IsType<UpcastOrderV3>(result);
         var v3 = (UpcastOrderV3)result;
-        v3.Amount.Should().Be(99.5m);
-        v3.Region.Should().Be("default");
-        v3.Currency.Should().Be("USD");
+        Assert.Equal(99.5m, v3.Amount);
+        Assert.Equal("default", v3.Region);
+        Assert.Equal("USD", v3.Currency);
     }
 
     [Fact]
@@ -449,10 +447,10 @@ public sealed class UpcasterChainTests
 
         var result = s.Deserialize(envelope);
 
-        result.Should().BeOfType<UpcastOrderV3>();
+        Assert.IsType<UpcastOrderV3>(result);
         var v3 = (UpcastOrderV3)result;
-        v3.Region.Should().Be("default-region");
-        v3.Currency.Should().Be("EUR");
+        Assert.Equal("default-region", v3.Region);
+        Assert.Equal("EUR", v3.Currency);
     }
 
     [Fact]
@@ -483,9 +481,9 @@ public sealed class UpcasterChainTests
 
         var result = s.Deserialize(envelope);
 
-        result.Should().BeOfType<UpcastOrderV3>();
-        ((UpcastOrderV3)result).Region.Should().Be("eu-north");
-        ((UpcastOrderV3)result).Currency.Should().Be("GBP");
+        Assert.IsType<UpcastOrderV3>(result);
+        Assert.Equal("eu-north", ((UpcastOrderV3)result).Region);
+        Assert.Equal("GBP", ((UpcastOrderV3)result).Currency);
     }
 
     [Fact]
@@ -515,9 +513,9 @@ public sealed class UpcasterChainTests
 
         var result = s.Deserialize(envelope);
 
-        result.Should().BeOfType<UpcastOrderV3>();
-        ((UpcastOrderV3)result).Currency.Should().Be("JPY",
-            "plain deserialization must be used — upcaster must not run");
+        Assert.IsType<UpcastOrderV3>(result);
+        // plain deserialization must be used — upcaster must not run
+        Assert.Equal("JPY", ((UpcastOrderV3)result).Currency);
     }
 
     // ── Validation errors ───────────────────────────────────────────────────
@@ -525,9 +523,8 @@ public sealed class UpcasterChainTests
     [Fact]
     public void Build_Throws_WhenNoSteps()
     {
-        var act = () => DeclareUpcaster.For<UpcastOrderV3>("upcast-order").Build();
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*no steps*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(() => DeclareUpcaster.For<UpcastOrderV3>("upcast-order").Build());
+        Assert.Contains("no steps", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -542,8 +539,8 @@ public sealed class UpcasterChainTests
             .Build();
 
         // Actual message: "Upcaster for '...' has a gap between versions 1 and 3. Add a step for source version 2."
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*gap*1*and*3*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        Assert.Matches("(?is)gap.*1.*and.*3", exception.Message);
     }
 
     [Fact]
@@ -555,8 +552,8 @@ public sealed class UpcasterChainTests
             .From<UpcastOrderV1, UpcastOrderV2>(1, v1 => new UpcastOrderV2(v1.OrderId, v1.Amount, "y"))  // duplicate
             .Build();
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*duplicate*1*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        Assert.Matches("(?is)duplicate.*1", exception.Message);
     }
 
     [Fact]
@@ -582,9 +579,8 @@ public sealed class UpcasterChainTests
             CreatedAt = DateTimeOffset.UtcNow
         };
 
-        var act = () => s.Deserialize(envelope);
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Upcaster*upcast-order*no step*5*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(() => s.Deserialize(envelope));
+        Assert.Matches("(?is)Upcaster.*upcast-order.*no step.*5", exception.Message);
     }
 
     [Fact]
@@ -597,8 +593,8 @@ public sealed class UpcasterChainTests
 
         var act = () => UpcasterRegistry.Create().Add(decl).Add(decl).Build();
         // Actual message: "An upcaster for event type 'upcast-order' is already registered."
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*upcast-order*already registered*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        Assert.Matches("(?is)upcast-order.*already registered", exception.Message);
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────
@@ -653,8 +649,8 @@ public sealed class UpcasterSerializerDeserializeTests
 
         var result = serializer.Deserialize(oldEnvelope);
 
-        result.Should().BeOfType<UpcastOrderV3>(
-            "the upcaster must run on the command/decision read path");
-        ((UpcastOrderV3)result).Region.Should().Be("command-path");
+        // the upcaster must run on the command/decision read path
+        Assert.IsType<UpcastOrderV3>(result);
+        Assert.Equal("command-path", ((UpcastOrderV3)result).Region);
     }
 }

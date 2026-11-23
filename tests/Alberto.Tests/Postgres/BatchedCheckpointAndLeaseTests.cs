@@ -2,7 +2,6 @@ using Alberto.Checkpoints;
 using Alberto.Leases;
 using Alberto.Postgres;
 using Alberto.Tests.Infrastructure;
-using FluentAssertions;
 using Npgsql;
 using Xunit;
 
@@ -40,7 +39,7 @@ public sealed class BatchedCheckpointAndLeaseTests(BatchedCheckpointFixture fixt
 
         var stored = await Batch().GetManyAsync([a, b, missing], Ct);
 
-        stored.Should().BeEquivalentTo(new Dictionary<string, long?> { [a] = 10, [b] = 20, [missing] = null });
+        Assert.Equivalent(new Dictionary<string, long?> { [a] = 10, [b] = 20, [missing] = null }, stored, strict: true);
     }
 
     [Fact]
@@ -53,10 +52,11 @@ public sealed class BatchedCheckpointAndLeaseTests(BatchedCheckpointFixture fixt
         var outcomes = await Batch().SaveManyAsync(
             [new(existing, 30, 10, 0), new(fresh, 5, null, 0), new(behind, 20, 50, 0)], null, Ct);
 
-        outcomes.Values.Should().AllSatisfy(o => o.Result.Should().Be(CheckpointWriteResult.Written));
-        (await Store().GetAsync(existing, Ct)).Should().Be(30);
-        (await Store().GetAsync(fresh, Ct)).Should().Be(5);
-        (await Store().GetAsync(behind, Ct)).Should().Be(50, because: "SaveAsync stays monotonic");
+        Assert.All(outcomes.Values, o => Assert.Equal(CheckpointWriteResult.Written, o.Result));
+        Assert.Equal(30, await Store().GetAsync(existing, Ct));
+        Assert.Equal(5, await Store().GetAsync(fresh, Ct));
+        // SaveAsync stays monotonic
+        Assert.Equal(50, await Store().GetAsync(behind, Ct));
     }
 
     [Fact]
@@ -76,7 +76,8 @@ public sealed class BatchedCheckpointAndLeaseTests(BatchedCheckpointFixture fixt
 
         await cache.SaveAsync(rewound, 100, Ct);
         await cache.SaveAsync(reset, 100, Ct);
-        (await Store().GetAsync(rewound, Ct)).Should().Be(100, because: "a leased save writes through");
+        // a leased save writes through
+        Assert.Equal(100, await Store().GetAsync(rewound, Ct));
 
         // The operator, through its own store.
         await Store().RewindAsync(rewound, 40, Ct);
@@ -85,15 +86,18 @@ public sealed class BatchedCheckpointAndLeaseTests(BatchedCheckpointFixture fixt
         await cache.SaveAsync(rewound, 150, Ct);
         await cache.SaveAsync(reset, 150, Ct);
 
-        (await Store().GetAsync(rewound, Ct)).Should().Be(40, because: "the write must not lift a rewind");
-        (await Store().GetAsync(reset, Ct)).Should().BeNull(because: "the write must not recreate a reset row");
-        (await cache.GetAsync(rewound, Ct)).Should().Be(40);
-        (await cache.GetAsync(reset, Ct)).Should().BeNull();
-        violations.Should().Be(0, because: "an operator reset is not a lost lease");
+        // the write must not lift a rewind
+        Assert.Equal(40, await Store().GetAsync(rewound, Ct));
+        // the write must not recreate a reset row
+        Assert.Null((await Store().GetAsync(reset, Ct)));
+        Assert.Equal(40, await cache.GetAsync(rewound, Ct));
+        Assert.Null((await cache.GetAsync(reset, Ct)));
+        // an operator reset is not a lost lease
+        Assert.Equal(0, violations);
 
         // From the lowered position the processor advances normally.
         await cache.SaveAsync(rewound, 60, Ct);
-        (await Store().GetAsync(rewound, Ct)).Should().Be(60);
+        Assert.Equal(60, await Store().GetAsync(rewound, Ct));
     }
 
     [Fact]
@@ -105,17 +109,16 @@ public sealed class BatchedCheckpointAndLeaseTests(BatchedCheckpointFixture fixt
         var stale = (await leases.TryAcquireAsync(consumer, processor, "replica-a", Ct))!.FenceToken;
         var fencing = new FencingContext(consumer, "replica-a", UseProcessorLeaseFencing: true);
 
-        (await Batch().SaveManyAsync([new(processor, 10, null, stale)], fencing, Ct))[processor].Result
-            .Should().Be(CheckpointWriteResult.Written);
+        Assert.Equal(CheckpointWriteResult.Written, (await Batch().SaveManyAsync([new(processor, 10, null, stale)], fencing, Ct))[processor].Result);
 
         await ExpireLeaseAsync(consumer, processor);
         var current = (await leases.TryAcquireAsync(consumer, processor, "replica-a", Ct))!.FenceToken;
-        current.Should().BeGreaterThan(stale);
+        Assert.True(current > stale);
 
         var outcome = await Batch().SaveManyAsync([new(processor, 99, 10, stale)], fencing, Ct);
 
-        outcome[processor].Result.Should().Be(CheckpointWriteResult.Fenced);
-        (await Store().GetAsync(processor, Ct)).Should().Be(10);
+        Assert.Equal(CheckpointWriteResult.Fenced, outcome[processor].Result);
+        Assert.Equal(10, await Store().GetAsync(processor, Ct));
     }
 
     [Fact]
@@ -136,9 +139,9 @@ public sealed class BatchedCheckpointAndLeaseTests(BatchedCheckpointFixture fixt
             Task.Run(() => leases.TryAcquireManyAsync(consumer, ids, "replica-b", Ct), Ct));
 
         var won = results.SelectMany(r => r.Select(l => l.ProcessorId)).ToList();
-        won.Should().OnlyHaveUniqueItems();
-        won.Should().BeEquivalentTo(ids);
-        results.SelectMany(r => r).Select(l => l.FenceToken).Should().OnlyHaveUniqueItems();
+        Assert.Distinct(won);
+        Assert.Equivalent(new[] { ids }, won, strict: true);
+        Assert.Distinct(results.SelectMany(r => r).Select(l => l.FenceToken));
     }
 
     [Fact]
@@ -149,18 +152,19 @@ public sealed class BatchedCheckpointAndLeaseTests(BatchedCheckpointFixture fixt
         var leases = Leases();
 
         var first = await leases.TryAcquireManyAsync(consumer, ids, "replica-a", Ct);
-        first.Should().HaveCount(3);
+        Assert.Equal(3, first.Count());
 
         var before = await FenceSequenceAsync();
         var lost = await leases.TryAcquireManyAsync(consumer, ids, "replica-b", Ct);
         var after = await FenceSequenceAsync();
 
-        lost.Should().BeEmpty();
-        after.Should().Be(before, because: "a losing acquire must not consume a fence token");
+        Assert.Empty(lost);
+        // a losing acquire must not consume a fence token
+        Assert.Equal(before, after);
 
         // Re-acquiring its own leases is a new generation for each.
         var again = await leases.TryAcquireManyAsync(consumer, ids, "replica-a", Ct);
-        again.Select(l => l.FenceToken).Should().AllSatisfy(t => t.Should().BeGreaterThan(before));
+        Assert.All(again.Select(l => l.FenceToken), t => Assert.True(t > before));
     }
 
     private async Task<long> FenceSequenceAsync()
@@ -182,7 +186,7 @@ public sealed class BatchedCheckpointAndLeaseTests(BatchedCheckpointFixture fixt
             conn);
         cmd.Parameters.AddWithValue("consumer_id", consumerId);
         cmd.Parameters.AddWithValue("processor_id", processorId);
-        (await cmd.ExecuteNonQueryAsync(Ct)).Should().Be(1);
+        Assert.Equal(1, await cmd.ExecuteNonQueryAsync(Ct));
     }
 }
 
@@ -206,12 +210,12 @@ public sealed class BatchedCheckpointMultiTenantTests(FenceTokenMultiTenantFixtu
             [new(held, 10, null, token), new(notHeld, 10, null, token)],
             new FencingContext(consumer, "replica-a", UseProcessorLeaseFencing: true), Ct);
 
-        processorMode[held].Result.Should().Be(CheckpointWriteResult.Written);
-        processorMode[notHeld].Result.Should().Be(CheckpointWriteResult.Fenced);
+        Assert.Equal(CheckpointWriteResult.Written, processorMode[held].Result);
+        Assert.Equal(CheckpointWriteResult.Fenced, processorMode[notHeld].Result);
 
         var tenantMode = new FencingContext(consumer, "replica-a");
-        (await batch.SaveManyAsync([new(held, 20, 10, 0)], tenantMode, Ct))[held].Result
-            .Should().Be(CheckpointWriteResult.Fenced, because: "the replica holds no tenant lease");
+        // the replica holds no tenant lease
+        Assert.Equal(CheckpointWriteResult.Fenced, (await batch.SaveManyAsync([new(held, 20, 10, 0)], tenantMode, Ct))[held].Result);
 
         await using (var conn = await fixture.DataSource.OpenConnectionAsync(Ct))
         await using (var cmd = new NpgsqlCommand(
@@ -224,8 +228,7 @@ public sealed class BatchedCheckpointMultiTenantTests(FenceTokenMultiTenantFixtu
             await cmd.ExecuteNonQueryAsync(Ct);
         }
 
-        (await batch.SaveManyAsync([new(held, 20, 10, 0)], tenantMode, Ct))[held].Result
-            .Should().Be(CheckpointWriteResult.Written);
-        (await new PostgresCheckpointStore(fixture.DataSource).GetAsync(held, Ct)).Should().Be(20);
+        Assert.Equal(CheckpointWriteResult.Written, (await batch.SaveManyAsync([new(held, 20, 10, 0)], tenantMode, Ct))[held].Result);
+        Assert.Equal(20, await new PostgresCheckpointStore(fixture.DataSource).GetAsync(held, Ct));
     }
 }

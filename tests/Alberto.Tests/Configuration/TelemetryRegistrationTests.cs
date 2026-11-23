@@ -6,7 +6,6 @@ using Alberto.InMemory;
 using Alberto.Telemetry;
 using Alberto.Tests.Telemetry;
 using Xunit;
-using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -33,8 +32,8 @@ public class TelemetryRegistrationTests
 
         var definition = Resolve(services);
 
-        definition.TelemetryEnabled.Should().BeTrue();
-        definition.Telemetry.Enabled.Should().BeTrue();
+        Assert.True(definition.TelemetryEnabled);
+        Assert.True(definition.Telemetry.Enabled);
     }
 
     [Fact]
@@ -51,7 +50,7 @@ public class TelemetryRegistrationTests
         services.AddSingleton<IConfiguration>(configuration);
         services.AddAlberto("orders", module => module.WithInMemory().WithTelemetry());
 
-        Resolve(services).Telemetry.Enabled.Should().BeFalse();
+        Assert.False(Resolve(services).Telemetry.Enabled);
     }
 
     [Fact]
@@ -75,7 +74,7 @@ public class TelemetryRegistrationTests
 
         tracerProvider.ForceFlush();
 
-        exported.Should().ContainSingle(a => a.OperationName == "test-span");
+        Assert.Single(exported, a => a.OperationName == "test-span");
     }
 
     // ── Finding 1 ──────────────────────────────────────────────────────────
@@ -119,8 +118,8 @@ public class TelemetryRegistrationTests
 
         tracerProvider.ForceFlush();
 
-        exported.Should().NotContain(a => a.TraceId == root.TraceId && a.OperationName.StartsWith(AlbertoMetrics.AppendActivityName),
-            "Telemetry:Enabled = false must suppress Alberto append activities");
+        // Telemetry:Enabled = false must suppress Alberto append activities
+        Assert.DoesNotContain(exported, a => a.TraceId == root.TraceId && a.OperationName.StartsWith(AlbertoMetrics.AppendActivityName));
     }
 
     [Fact]
@@ -150,8 +149,8 @@ public class TelemetryRegistrationTests
 
         tracerProvider.ForceFlush();
 
-        exported.Should().ContainSingle(a => a.OperationName.StartsWith(AlbertoMetrics.AppendActivityName),
-            "Telemetry:Enabled = true (default) must produce exactly one Alberto append activity");
+        // Telemetry:Enabled = true (default) must produce exactly one Alberto append activity
+        Assert.Single(exported, a => a.OperationName.StartsWith(AlbertoMetrics.AppendActivityName));
     }
 
     // ── Finding 2 ──────────────────────────────────────────────────────────
@@ -191,8 +190,9 @@ public class TelemetryRegistrationTests
 
         tracerProvider.ForceFlush();
 
-        exported.Count(a => a.TraceId == root.TraceId && a.OperationName.StartsWith(AlbertoMetrics.AppendActivityName))
-            .Should().Be(1, "one append on one module must produce exactly one Alberto.Append activity, not one per WithTelemetry() call");
+        // one append on one module must produce exactly one Alberto.Append activity, not one per
+        // WithTelemetry() call
+        Assert.Equal(1, exported.Count(a => a.TraceId == root.TraceId && a.OperationName.StartsWith(AlbertoMetrics.AppendActivityName)));
     }
 
     // ── Finding I3 ─────────────────────────────────────────────────────────
@@ -202,27 +202,21 @@ public class TelemetryRegistrationTests
     {
         // The spec retains AddAlbertoInstrumentation for manual TracerProvider wiring.
         // It must not carry [Obsolete] — the attribute was added by mistake.
-        typeof(Alberto.Telemetry.AlbertoTelemetryServiceCollectionExtensions)
-            .GetMethods()
-            .Where(m => m.Name == "AddAlbertoInstrumentation"
-                     && m.GetParameters().Length == 1
-                     && m.GetParameters()[0].ParameterType == typeof(TracerProviderBuilder))
-            .Should().ContainSingle()
-            .Which.GetCustomAttributes(typeof(ObsoleteAttribute), inherit: false)
-            .Should().BeEmpty("AddAlbertoInstrumentation must not be marked [Obsolete]");
+        var methods = typeof(AlbertoTelemetryServiceCollectionExtensions).GetMethods();
+        var method = Assert.Single(methods, m => m.Name == "AddAlbertoInstrumentation"
+            && m.GetParameters().Length == 1
+            && m.GetParameters()[0].ParameterType == typeof(TracerProviderBuilder));
+        Assert.Empty(method.GetCustomAttributes(typeof(ObsoleteAttribute), inherit: false));
     }
 
     [Fact]
     public void AddAlbertoInstrumentation_MeterProviderBuilder_is_not_obsolete()
     {
-        typeof(Alberto.Telemetry.AlbertoTelemetryServiceCollectionExtensions)
-            .GetMethods()
-            .Where(m => m.Name == "AddAlbertoInstrumentation"
-                     && m.GetParameters().Length == 1
-                     && m.GetParameters()[0].ParameterType == typeof(OpenTelemetry.Metrics.MeterProviderBuilder))
-            .Should().ContainSingle()
-            .Which.GetCustomAttributes(typeof(ObsoleteAttribute), inherit: false)
-            .Should().BeEmpty("AddAlbertoInstrumentation must not be marked [Obsolete]");
+        var methods = typeof(AlbertoTelemetryServiceCollectionExtensions).GetMethods();
+        var method = Assert.Single(methods, m => m.Name == "AddAlbertoInstrumentation"
+            && m.GetParameters().Length == 1
+            && m.GetParameters()[0].ParameterType == typeof(OpenTelemetry.Metrics.MeterProviderBuilder));
+        Assert.Empty(method.GetCustomAttributes(typeof(ObsoleteAttribute), inherit: false));
     }
 
     [Fact]
@@ -248,9 +242,8 @@ public class TelemetryRegistrationTests
 
         tracerProvider.ForceFlush();
 
-        exported.Count(a => a.OperationName == "i3-idempotency-span")
-            .Should().Be(1,
-                "AddAlbertoInstrumentation() plus WithTelemetry() must not double-register the source");
+        // AddAlbertoInstrumentation() plus WithTelemetry() must not double-register the source
+        Assert.Equal(1, exported.Count(a => a.OperationName == "i3-idempotency-span"));
     }
 
     [Fact]
@@ -291,9 +284,9 @@ public class TelemetryRegistrationTests
 
         tracerProvider.ForceFlush();
 
-        exported.Should().ContainSingle(a => a.OperationName == "my-app-span",
-            "the app's own OTel source must still be collected after AddAlberto");
-        exported.Should().ContainSingle(a => a.OperationName.StartsWith(AlbertoMetrics.AppendActivityName),
-            "Alberto's append activity must also be collected");
+        // the app's own OTel source must still be collected after AddAlberto
+        Assert.Single(exported, a => a.OperationName == "my-app-span");
+        // Alberto's append activity must also be collected
+        Assert.Single(exported, a => a.OperationName.StartsWith(AlbertoMetrics.AppendActivityName));
     }
 }

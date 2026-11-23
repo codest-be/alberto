@@ -1,7 +1,6 @@
 using Alberto.Checkpoints;
 using Alberto.DeadLetters;
 using Alberto.Tenancy;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Xunit;
@@ -55,8 +54,8 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
         await using (var scope = ScopeFor(ShardedPostgresFixture.TenantOnDb1))
             await StoreOf(scope).AppendAsync([Event(NewId())], cancellationToken: TestContext.Current.CancellationToken);
 
-        (await CountEventsAsync(fixture.Db1, ShardedPostgresFixture.TenantOnDb1)).Should().BeGreaterThan(0);
-        (await CountEventsAsync(fixture.Db2, ShardedPostgresFixture.TenantOnDb1)).Should().Be(0);
+        Assert.True((await CountEventsAsync(fixture.Db1, ShardedPostgresFixture.TenantOnDb1)) > 0);
+        Assert.Equal(0, await CountEventsAsync(fixture.Db2, ShardedPostgresFixture.TenantOnDb1));
     }
 
     [Fact]
@@ -72,14 +71,14 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
         await using (var scope = ScopeFor(ShardedPostgresFixture.TenantOnDb2))
         {
             // Same tag, other database: not merely filtered out by tenant_id — it is not there.
-            (await StoreOf(scope).StreamAsync(query, cancellationToken: cancellationToken).ToListAsync()).Should().BeEmpty();
+            Assert.Empty((await StoreOf(scope).StreamAsync(query, cancellationToken: cancellationToken).ToListAsync()));
 
             await StoreOf(scope).AppendAsync([Event(id)], cancellationToken: cancellationToken);
-            (await StoreOf(scope).StreamAsync(query, cancellationToken: cancellationToken).ToListAsync()).Should().ContainSingle();
+            Assert.Single((await StoreOf(scope).StreamAsync(query, cancellationToken: cancellationToken).ToListAsync()));
         }
 
         await using (var scope = ScopeFor(ShardedPostgresFixture.TenantOnDb1))
-            (await StoreOf(scope).StreamAsync(query, cancellationToken: cancellationToken).ToListAsync()).Should().ContainSingle();
+            Assert.Single((await StoreOf(scope).StreamAsync(query, cancellationToken: cancellationToken).ToListAsync()));
     }
 
     [Fact]
@@ -95,7 +94,7 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
             await StoreOf(scope).AppendAsync([Event(id)], cancellationToken: cancellationToken);
 
         await using (var scope = ScopeFor(ShardedPostgresFixture.TenantAlsoOnDb1))
-            (await StoreOf(scope).StreamAsync(query, cancellationToken: cancellationToken).ToListAsync()).Should().BeEmpty();
+            Assert.Empty((await StoreOf(scope).StreamAsync(query, cancellationToken: cancellationToken).ToListAsync()));
     }
 
     [Fact]
@@ -114,7 +113,7 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
         for (var i = 0; i < 3; i++)
             await StoreOf(db1).AppendAsync([Event(NewId())], cancellationToken: cancellationToken);
 
-        (await StoreOf(db2).GetLastPositionAsync(cancellationToken)).Should().Be(beforeOnDb2);
+        Assert.Equal(beforeOnDb2, await StoreOf(db2).GetLastPositionAsync(cancellationToken));
     }
 
     [Fact]
@@ -128,8 +127,8 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
 
         await db1.SaveAsync(processorId, 42, cancellationToken);
 
-        (await db1.GetAsync(processorId, cancellationToken)).Should().Be(42);
-        (await db2.GetAsync(processorId, cancellationToken)).Should().BeNull();
+        Assert.Equal(42, await db1.GetAsync(processorId, cancellationToken));
+        Assert.Null((await db2.GetAsync(processorId, cancellationToken)));
     }
 
     [Fact]
@@ -157,8 +156,8 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
             },
             cancellationToken);
 
-        (await db1.CountAsync(processorId, cancellationToken)).Should().Be(1);
-        (await db2.CountAsync(processorId, cancellationToken)).Should().Be(0);
+        Assert.Equal(1, await db1.CountAsync(processorId, cancellationToken));
+        Assert.Equal(0, await db2.CountAsync(processorId, cancellationToken));
     }
 
     [Fact]
@@ -176,7 +175,7 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
         while (await reader.ReadAsync(cancellationToken))
             columns.Add(reader.GetString(0));
 
-        columns.Should().BeEquivalentTo("module_key", "tenant_id", "shard_id", "assigned_at");
+        Assert.Equivalent(new[] { "module_key", "tenant_id", "shard_id", "assigned_at" }, columns, strict: true);
     }
 
     [Fact]
@@ -189,8 +188,7 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
         var fresh = new TenantShardResolver(
             ModuleKey, map, new HashSet<string>(["db1", "db2"], StringComparer.Ordinal), null);
 
-        (await fresh.ResolveAsync(ShardedPostgresFixture.TenantOnDb2, TestContext.Current.CancellationToken))
-            .Should().Be("db2");
+        Assert.Equal("db2", await fresh.ResolveAsync(ShardedPostgresFixture.TenantOnDb2, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -202,9 +200,9 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
         var map = fixture.Services.GetRequiredKeyedService<ITenantShardMap>(ModuleKey);
         var tenantId = $"race{Guid.NewGuid():N}"[..20];
 
-        (await map.AssignAsync(tenantId, "db1", cancellationToken)).Should().Be("db1");
-        (await map.AssignAsync(tenantId, "db2", cancellationToken)).Should().Be("db1");
-        (await map.ResolveAsync(tenantId, cancellationToken)).Should().Be("db1");
+        Assert.Equal("db1", await map.AssignAsync(tenantId, "db1", cancellationToken));
+        Assert.Equal("db1", await map.AssignAsync(tenantId, "db2", cancellationToken));
+        Assert.Equal("db1", await map.ResolveAsync(tenantId, cancellationToken));
     }
 
     [Fact]
@@ -217,8 +215,8 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
         var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(async i =>
             await map.AssignAsync(tenantId, i % 2 == 0 ? "db1" : "db2", cancellationToken)));
 
-        results.Should().AllBe(results[0]);
-        (await map.ResolveAsync(tenantId, cancellationToken)).Should().Be(results[0]);
+        Assert.All(results, item => Assert.Equal(results[0], item));
+        Assert.Equal(results[0], await map.ResolveAsync(tenantId, cancellationToken));
     }
 
     [Fact]
@@ -231,6 +229,6 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
         var append = async () => await StoreOf(scope).AppendAsync(
             [Event(NewId())], cancellationToken: TestContext.Current.CancellationToken);
 
-        await append.Should().ThrowAsync<UnknownTenantException>();
+        await Assert.ThrowsAnyAsync<UnknownTenantException>(append);
     }
 }

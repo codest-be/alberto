@@ -4,7 +4,6 @@ using Alberto.Configuration;
 using Alberto.InMemory;
 using Alberto.Subscriptions;
 using Alberto.Telemetry;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests;
@@ -54,8 +53,8 @@ public sealed class MetricTagContractTests
         // Touch the static class to force initialisation of every field before asserting.
         _ = AlbertoMetrics.Meter;
 
-        found.Should().BeEquivalentTo(
-            new[]
+        // renaming an instrument or changing its unit is a breaking change for dashboards and alerts
+        Assert.Equivalent(new[]
             {
                 // Counters
                 ("alberto.events.appended",       "events"),
@@ -78,9 +77,7 @@ public sealed class MetricTagContractTests
                 ("alberto.processor.lag",         "events"),
                 ("alberto.head.stalled",          "s"),
                 ("alberto.owned_tenant_count",    "tenants"),
-            },
-            options => options.WithoutStrictOrdering(),
-            "renaming an instrument or changing its unit is a breaking change for dashboards and alerts");
+            }, found, strict: true);
     }
 
     // ── 3. Core consume-path instruments: {processor, module, [shard]} ───────
@@ -102,8 +99,8 @@ public sealed class MetricTagContractTests
             ctx.ProcessorId,
             () => mw(ctx, () => throw new InvalidOperationException("boom")));
 
-        TagKeys(tags).Should().BeEquivalentTo(["processor", "module"],
-            "alberto.dead_letters tag contract is {{processor, module}} for an unsharded module");
+        // alberto.dead_letters tag contract is {{processor, module}} for an unsharded module
+        Assert.Equivalent(new[] { "processor", "module" }, TagKeys(tags), strict: true);
     }
 
     [Fact]
@@ -119,8 +116,8 @@ public sealed class MetricTagContractTests
             ctx.ProcessorId,
             () => mw(ctx, () => throw new InvalidOperationException("boom")));
 
-        TagKeys(tags).Should().BeEquivalentTo(["processor", "module", "shard"],
-            "alberto.dead_letters tag contract is {{processor, module, shard}} for a sharded module");
+        // alberto.dead_letters tag contract is {{processor, module, shard}} for a sharded module
+        Assert.Equivalent(new[] { "processor", "module", "shard" }, TagKeys(tags), strict: true);
     }
 
     [Fact]
@@ -146,8 +143,8 @@ public sealed class MetricTagContractTests
                 return Task.CompletedTask;
             }));
 
-        TagKeys(tags).Should().BeEquivalentTo(["processor", "module"],
-            "alberto.retries tag contract is {{processor, module}} for an unsharded module");
+        // alberto.retries tag contract is {{processor, module}} for an unsharded module
+        Assert.Equivalent(new[] { "processor", "module" }, TagKeys(tags), strict: true);
     }
 
     [Fact]
@@ -173,8 +170,8 @@ public sealed class MetricTagContractTests
                 return Task.CompletedTask;
             }));
 
-        TagKeys(tags).Should().BeEquivalentTo(["processor", "module", "shard"],
-            "alberto.retries tag contract is {{processor, module, shard}} for a sharded module");
+        // alberto.retries tag contract is {{processor, module, shard}} for a sharded module
+        Assert.Equivalent(new[] { "processor", "module", "shard" }, TagKeys(tags), strict: true);
     }
 
     [Fact]
@@ -186,9 +183,9 @@ public sealed class MetricTagContractTests
         var all = CollectObservableGaugeMeasurements<long>("alberto.processor.lag");
         var match = all.Where(m => TagValue(m.Tags, "processor") == processorId).ToList();
 
-        match.Should().ContainSingle();
-        TagKeys(match[0].Tags).Should().BeEquivalentTo(["processor", "module"],
-            "alberto.processor.lag tag contract is {{processor, module}} for an unsharded module");
+        Assert.Single(match);
+        // alberto.processor.lag tag contract is {{processor, module}} for an unsharded module
+        Assert.Equivalent(new[] { "processor", "module" }, TagKeys(match[0].Tags), strict: true);
     }
 
     [Fact]
@@ -200,9 +197,9 @@ public sealed class MetricTagContractTests
         var all = CollectObservableGaugeMeasurements<long>("alberto.processor.lag");
         var match = all.Where(m => TagValue(m.Tags, "processor") == processorId).ToList();
 
-        match.Should().ContainSingle();
-        TagKeys(match[0].Tags).Should().BeEquivalentTo(["processor", "module", "shard"],
-            "alberto.processor.lag tag contract is {{processor, module, shard}} for a sharded module");
+        Assert.Single(match);
+        // alberto.processor.lag tag contract is {{processor, module, shard}} for a sharded module
+        Assert.Equivalent(new[] { "processor", "module", "shard" }, TagKeys(match[0].Tags), strict: true);
     }
 
     // ── 3b. Head-stall gauge: {module, [shard]} ───────────────────────────────
@@ -219,9 +216,9 @@ public sealed class MetricTagContractTests
         var all = CollectObservableGaugeMeasurements<double>("alberto.head.stalled");
         var match = all.Where(m => TagValue(m.Tags, "module") == moduleKey).ToList();
 
-        match.Should().ContainSingle();
-        TagKeys(match[0].Tags).Should().BeEquivalentTo(["module"],
-            "alberto.head.stalled tag contract is {{module}} for an unsharded module");
+        Assert.Single(match);
+        // alberto.head.stalled tag contract is {{module}} for an unsharded module
+        Assert.Equivalent(new[] { "module" }, TagKeys(match[0].Tags), strict: true);
     }
 
     [Fact]
@@ -233,9 +230,9 @@ public sealed class MetricTagContractTests
         var all = CollectObservableGaugeMeasurements<double>("alberto.head.stalled");
         var match = all.Where(m => TagValue(m.Tags, "module") == moduleKey).ToList();
 
-        match.Should().ContainSingle();
-        TagKeys(match[0].Tags).Should().BeEquivalentTo(["module", "shard"],
-            "alberto.head.stalled tag contract is {{module, shard}} for a sharded module");
+        Assert.Single(match);
+        // alberto.head.stalled tag contract is {{module, shard}} for a sharded module
+        Assert.Equivalent(new[] { "module", "shard" }, TagKeys(match[0].Tags), strict: true);
     }
 
     // ── 4. Telemetry-package instruments: {processor, module, [shard]} ───────
@@ -254,8 +251,8 @@ public sealed class MetricTagContractTests
             ctx.ProcessorId,
             () => mw(ctx, () => Task.CompletedTask));
 
-        TagKeys(tags).Should().BeEquivalentTo(["processor", "module"],
-            "alberto.events.processed tag contract is {{processor, module}} for an unsharded module");
+        // alberto.events.processed tag contract is {{processor, module}} for an unsharded module
+        Assert.Equivalent(new[] { "processor", "module" }, TagKeys(tags), strict: true);
     }
 
     [Fact]
@@ -269,8 +266,8 @@ public sealed class MetricTagContractTests
             ctx.ProcessorId,
             () => mw(ctx, () => Task.CompletedTask));
 
-        TagKeys(tags).Should().BeEquivalentTo(["processor", "module", "shard"],
-            "alberto.events.processed tag contract is {{processor, module, shard}} for a sharded module");
+        // alberto.events.processed tag contract is {{processor, module, shard}} for a sharded module
+        Assert.Equivalent(new[] { "processor", "module", "shard" }, TagKeys(tags), strict: true);
     }
 
     [Fact]
@@ -284,8 +281,8 @@ public sealed class MetricTagContractTests
             ctx.ProcessorId,
             () => mw(ctx, () => Task.CompletedTask));
 
-        TagKeys(tags).Should().BeEquivalentTo(["processor", "module"],
-            "alberto.processing.duration tag contract is {{processor, module}} for an unsharded module");
+        // alberto.processing.duration tag contract is {{processor, module}} for an unsharded module
+        Assert.Equivalent(new[] { "processor", "module" }, TagKeys(tags), strict: true);
     }
 
     [Fact]
@@ -299,8 +296,8 @@ public sealed class MetricTagContractTests
             ctx.ProcessorId,
             () => mw(ctx, () => Task.CompletedTask));
 
-        TagKeys(tags).Should().BeEquivalentTo(["processor", "module", "shard"],
-            "alberto.processing.duration tag contract is {{processor, module, shard}} for a sharded module");
+        // alberto.processing.duration tag contract is {{processor, module, shard}} for a sharded module
+        Assert.Equivalent(new[] { "processor", "module", "shard" }, TagKeys(tags), strict: true);
     }
 
     [Fact]
@@ -319,8 +316,9 @@ public sealed class MetricTagContractTests
                 return Task.CompletedTask;
             }));
 
-        TagKeys(tags).Should().BeEquivalentTo(["processor", "module", "error.type"],
-            "alberto.processing.errors tag contract is {{processor, module, error.type}} for an unsharded module");
+        // alberto.processing.errors tag contract is {{processor, module, error.type}} for an unsharded
+        // module
+        Assert.Equivalent(new[] { "processor", "module", "error.type" }, TagKeys(tags), strict: true);
     }
 
     [Fact]
@@ -339,8 +337,9 @@ public sealed class MetricTagContractTests
                 return Task.CompletedTask;
             }));
 
-        TagKeys(tags).Should().BeEquivalentTo(["processor", "module", "shard", "error.type"],
-            "alberto.processing.errors tag contract is {{processor, module, shard, error.type}} for a sharded module");
+        // alberto.processing.errors tag contract is {{processor, module, shard, error.type}} for a
+        // sharded module
+        Assert.Equivalent(new[] { "processor", "module", "shard", "error.type" }, TagKeys(tags), strict: true);
     }
 
     // ── 5. Tenant-ownership gauges: {consumer.id, module, [shard]} ───────────
@@ -359,9 +358,10 @@ public sealed class MetricTagContractTests
         var all = CollectObservableGaugeMeasurements<int>("alberto.owned_tenant_count");
         var match = all.Where(m => TagValue(m.Tags, "consumer.id") == consumerId).ToList();
 
-        match.Should().ContainSingle();
-        TagKeys(match[0].Tags).Should().BeEquivalentTo(["consumer.id", "module"],
-            "alberto.owned_tenant_count tag contract is {{consumer.id, module}} — 'module.key' was renamed to 'module' at v1 freeze");
+        Assert.Single(match);
+        // alberto.owned_tenant_count tag contract is {{consumer.id, module}} — 'module.key' was renamed
+        // to 'module' at v1 freeze
+        Assert.Equivalent(new[] { "consumer.id", "module" }, TagKeys(match[0].Tags), strict: true);
     }
 
     [Fact]
@@ -373,9 +373,9 @@ public sealed class MetricTagContractTests
         var all = CollectObservableGaugeMeasurements<int>("alberto.owned_tenant_count");
         var match = all.Where(m => TagValue(m.Tags, "consumer.id") == consumerId).ToList();
 
-        match.Should().ContainSingle();
-        TagKeys(match[0].Tags).Should().BeEquivalentTo(["consumer.id", "module", "shard"],
-            "alberto.owned_tenant_count tag contract is {{consumer.id, module, shard}} for a sharded module");
+        Assert.Single(match);
+        // alberto.owned_tenant_count tag contract is {{consumer.id, module, shard}} for a sharded module
+        Assert.Equivalent(new[] { "consumer.id", "module", "shard" }, TagKeys(match[0].Tags), strict: true);
     }
 
     // ── 6. Ownership gauge module tag value is the logical name (not raw key) ─
@@ -389,10 +389,10 @@ public sealed class MetricTagContractTests
         var all = CollectObservableGaugeMeasurements<int>("alberto.owned_tenant_count");
         var match = all.Where(m => TagValue(m.Tags, "consumer.id") == consumerId).Single();
 
-        TagValue(match.Tags, "module").Should().Be("payments",
-            "the module tag must carry the logical module name, not the composite shard key");
-        TagValue(match.Tags, "shard").Should().Be("eu",
-            "the shard suffix must appear as a separate shard tag");
+        // the module tag must carry the logical module name, not the composite shard key
+        Assert.Equal("payments", TagValue(match.Tags, "module"));
+        // the shard suffix must appear as a separate shard tag
+        Assert.Equal("eu", TagValue(match.Tags, "shard"));
     }
 
     // ── 7. Span attribute keys (Alberto.Consume activities) ──────────────────
@@ -412,9 +412,20 @@ public sealed class MetricTagContractTests
 
         var tags = await CaptureConsumeSpanTagsAsync(ctx.ProcessorId, () => mw(ctx, () => Task.CompletedTask));
 
-        TagKeys(tags).Should().BeEquivalentTo(
-            ["messaging.system", "messaging.operation.type", "messaging.consumer.group.name", "messaging.destination.name", "alberto.processor.id", "alberto.module", "alberto.event.position", "alberto.event.type", "alberto.trace.links.count"],
-            "Alberto.Consume span attribute contract for an unsharded module must use 'module', not 'module.key'");
+        // Alberto.Consume span attribute contract for an unsharded module must use 'module', not
+        // 'module.key'
+        Assert.Equivalent(new[]
+        {
+            "messaging.system",
+            "messaging.operation.type",
+            "messaging.consumer.group.name",
+            "messaging.destination.name",
+            "alberto.processor.id",
+            "alberto.module",
+            "alberto.event.position",
+            "alberto.event.type",
+            "alberto.trace.links.count",
+        }, TagKeys(tags), strict: true);
     }
 
     [Fact]
@@ -425,9 +436,21 @@ public sealed class MetricTagContractTests
 
         var tags = await CaptureConsumeSpanTagsAsync(ctx.ProcessorId, () => mw(ctx, () => Task.CompletedTask));
 
-        TagKeys(tags).Should().BeEquivalentTo(
-            ["messaging.system", "messaging.operation.type", "messaging.consumer.group.name", "messaging.destination.name", "alberto.processor.id", "alberto.module", "alberto.shard", "alberto.event.position", "alberto.event.type", "alberto.trace.links.count"],
-            "Alberto.Consume span attribute contract for a sharded module must emit 'shard', not 'module.shard'");
+        // Alberto.Consume span attribute contract for a sharded module must emit 'shard', not
+        // 'module.shard'
+        Assert.Equivalent(new[]
+        {
+            "messaging.system",
+            "messaging.operation.type",
+            "messaging.consumer.group.name",
+            "messaging.destination.name",
+            "alberto.processor.id",
+            "alberto.module",
+            "alberto.shard",
+            "alberto.event.position",
+            "alberto.event.type",
+            "alberto.trace.links.count",
+        }, TagKeys(tags), strict: true);
     }
 
     [Fact]
@@ -438,9 +461,21 @@ public sealed class MetricTagContractTests
 
         var tags = await CaptureConsumeSpanTagsAsync(ctx.ProcessorId, () => mw(ctx, () => Task.CompletedTask));
 
-        TagKeys(tags).Should().BeEquivalentTo(
-            ["messaging.system", "messaging.operation.type", "messaging.consumer.group.name", "messaging.destination.name", "alberto.processor.id", "alberto.module", "messaging.batch.message_count", "alberto.event.position.first", "alberto.event.position.last", "alberto.trace.links.count"],
-            "Alberto.Consume batch span attribute contract for an unsharded module must use 'module', not 'module.key'");
+        // Alberto.Consume batch span attribute contract for an unsharded module must use 'module', not
+        // 'module.key'
+        Assert.Equivalent(new[]
+        {
+            "messaging.system",
+            "messaging.operation.type",
+            "messaging.consumer.group.name",
+            "messaging.destination.name",
+            "alberto.processor.id",
+            "alberto.module",
+            "messaging.batch.message_count",
+            "alberto.event.position.first",
+            "alberto.event.position.last",
+            "alberto.trace.links.count",
+        }, TagKeys(tags), strict: true);
     }
 
     [Fact]
@@ -451,9 +486,22 @@ public sealed class MetricTagContractTests
 
         var tags = await CaptureConsumeSpanTagsAsync(ctx.ProcessorId, () => mw(ctx, () => Task.CompletedTask));
 
-        TagKeys(tags).Should().BeEquivalentTo(
-            ["messaging.system", "messaging.operation.type", "messaging.consumer.group.name", "messaging.destination.name", "alberto.processor.id", "alberto.module", "alberto.shard", "messaging.batch.message_count", "alberto.event.position.first", "alberto.event.position.last", "alberto.trace.links.count"],
-            "Alberto.Consume batch span attribute contract for a sharded module must emit 'shard', not 'module.shard'");
+        // Alberto.Consume batch span attribute contract for a sharded module must emit 'shard', not
+        // 'module.shard'
+        Assert.Equivalent(new[]
+        {
+            "messaging.system",
+            "messaging.operation.type",
+            "messaging.consumer.group.name",
+            "messaging.destination.name",
+            "alberto.processor.id",
+            "alberto.module",
+            "alberto.shard",
+            "messaging.batch.message_count",
+            "alberto.event.position.first",
+            "alberto.event.position.last",
+            "alberto.trace.links.count",
+        }, TagKeys(tags), strict: true);
     }
 
     [Fact]
@@ -478,9 +526,20 @@ public sealed class MetricTagContractTests
             await mw(ctx, () => Task.CompletedTask);
         });
 
-        TagKeys(tags).Should().BeEquivalentTo(
-            ["messaging.system", "messaging.operation.type", "messaging.consumer.group.name", "messaging.destination.name", "alberto.processor.id", "alberto.module", "alberto.event.position", "alberto.event.type", "alberto.trace.links.count"],
-            "the capture must correlate to the span this test started, not to the first Alberto.Consume span the process happens to stop");
+        // the capture must correlate to the span this test started, not to the first Alberto.Consume span
+        // the process happens to stop
+        Assert.Equivalent(new[]
+        {
+            "messaging.system",
+            "messaging.operation.type",
+            "messaging.consumer.group.name",
+            "messaging.destination.name",
+            "alberto.processor.id",
+            "alberto.module",
+            "alberto.event.position",
+            "alberto.event.type",
+            "alberto.trace.links.count",
+        }, TagKeys(tags), strict: true);
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
@@ -576,8 +635,8 @@ public sealed class MetricTagContractTests
 
         lock (captured)
         {
-            captured.Should().ContainSingle(
-                $"expected exactly one Alberto.Consume activity for processor '{processorId}' to be started and stopped");
+            // expected exactly one Alberto.Consume activity for processor '{processorId}' to be started and stopped
+            Assert.Single(captured);
             return captured[0];
         }
     }
@@ -590,7 +649,8 @@ public sealed class MetricTagContractTests
         using var listener = BuildListener<T>(instrumentName, (v, tags) => captured ??= (v, tags));
         listener.Start();
         action();
-        captured.Should().NotBeNull($"expected a measurement on {instrumentName}");
+        // expected a measurement on {instrumentName}
+        Assert.NotNull(captured);
         return captured!.Value;
     }
 
@@ -618,7 +678,8 @@ public sealed class MetricTagContractTests
         using var listener = BuildListener<T>(instrumentName, (v, tags) => captured ??= (v, tags));
         listener.Start();
         action();
-        captured.Should().NotBeNull($"expected a measurement on {instrumentName}");
+        // expected a measurement on {instrumentName}
+        Assert.NotNull(captured);
         return captured!.Value;
     }
 
@@ -647,8 +708,8 @@ public sealed class MetricTagContractTests
         await action();
         lock (gate)
         {
-            captured.Should().NotBeNull(
-                $"expected a measurement on {instrumentName} tagged with processor '{processorId}'");
+            // expected a measurement on {instrumentName} tagged with processor '{processorId}'
+            Assert.NotNull(captured);
             return captured!.Value;
         }
     }

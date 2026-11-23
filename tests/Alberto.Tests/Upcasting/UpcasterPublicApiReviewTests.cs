@@ -5,7 +5,6 @@ using Alberto.InMemory;
 using Alberto.Messaging;
 using Alberto.Testing;
 using Alberto.Upcasting;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -96,19 +95,19 @@ public sealed class WithEventsFromDiSurfaceTests
 
         // Must have a keyed serializer.
         var keyed = sp.GetKeyedService<EventSerializer>(moduleKey);
-        keyed.Should().NotBeNull(
-            "WithEventsFrom must register EventSerializer as AddKeyedSingleton under the module key");
+        // WithEventsFrom must register EventSerializer as AddKeyedSingleton under the module key
+        Assert.NotNull(keyed);
 
         // Must NOT have an unkeyed serializer — that would leak to other modules.
-        sp.GetService<EventSerializer>().Should().BeNull(
-            "WithEventsFrom must not call TryAddSingleton; an unkeyed serializer would let a second " +
-            "module's outbox mapper accidentally resolve this module's serializer");
+        // WithEventsFrom must not call TryAddSingleton; an unkeyed serializer would let a second module's
+        // outbox mapper accidentally resolve this module's serializer
+        Assert.Null(sp.GetService<EventSerializer>());
 
         // AlbertoStore must be keyed.
         using var scope = sp.CreateScope();
-        scope.ServiceProvider.GetKeyedService<AlbertoStore>(moduleKey).Should().NotBeNull(
-            "WithEventsFrom must register AlbertoStore keyed by module key so a multi-module host " +
-            "gets one store per module");
+        // WithEventsFrom must register AlbertoStore keyed by module key so a multi-module host gets one
+        // store per module
+        Assert.NotNull(scope.ServiceProvider.GetKeyedService<AlbertoStore>(moduleKey));
     }
 
     /// <summary>
@@ -134,9 +133,9 @@ public sealed class WithEventsFromDiSurfaceTests
 
         using var sp = services.BuildServiceProvider();
 
-        sp.GetKeyedService<EventSerializer>(moduleKey).Should().NotBeNull(
-            "AddUpcaster before WithEventsFrom must still produce a keyed EventSerializer; " +
-            "all Configure callbacks run before any Register callback");
+        // AddUpcaster before WithEventsFrom must still produce a keyed EventSerializer; all Configure
+        // callbacks run before any Register callback
+        Assert.NotNull(sp.GetKeyedService<EventSerializer>(moduleKey));
     }
 }
 
@@ -173,18 +172,15 @@ public sealed class MisconfigurationStartupValidationTests
         var validator = new AlbertoModuleValidator();
         var failures = validator.Collect(definition);
 
-        failures.Should().ContainSingle(f => f.Code == "ALB0018",
-            "startup validation must catch [EventType(Version = 2)] without a registered upcaster " +
-            "so the runtime deserialization failure becomes a loud startup error instead of silent " +
-            "wrong data");
+        // startup validation must catch [EventType(Version = 2)] without a registered upcaster so the
+        // runtime deserialization failure becomes a loud startup error instead of silent wrong data
+        Assert.Single(failures, f => f.Code == "ALB0018");
 
-        failures.First(f => f.Code == "ALB0018").Problem
-            .Should().Contain("msc-order-placed",
-                "the ALB0018 message must identify the offending event type slug");
+        // the ALB0018 message must identify the offending event type slug
+        Assert.Contains("msc-order-placed", failures.First(f => f.Code == "ALB0018").Problem);
 
-        failures.First(f => f.Code == "ALB0018").Remedy
-            .Should().Contain("AddUpcaster",
-                "the ALB0018 remedy must name the public registration method");
+        // the ALB0018 remedy must name the public registration method
+        Assert.Contains("AddUpcaster", failures.First(f => f.Code == "ALB0018").Remedy);
     }
 
     [Fact]
@@ -201,8 +197,8 @@ public sealed class MisconfigurationStartupValidationTests
         var validator = new AlbertoModuleValidator();
         var failures = validator.Collect(definition);
 
-        failures.Should().NotContain(f => f.Code == "ALB0018",
-            "a Version = 1 event type needs no upcaster; ALB0018 must not fire");
+        // a Version = 1 event type needs no upcaster; ALB0018 must not fire
+        Assert.DoesNotContain(failures, f => f.Code == "ALB0018");
     }
 }
 
@@ -235,16 +231,17 @@ public sealed class MultiModuleSerializerIsolationTests
         using var sp = services.BuildServiceProvider();
 
         // Module A has its serializer.
-        sp.GetKeyedService<EventSerializer>("mod_a").Should().NotBeNull(
-            "module A called WithEventsFrom; its keyed serializer must be present");
+        // module A called WithEventsFrom; its keyed serializer must be present
+        Assert.NotNull(sp.GetKeyedService<EventSerializer>("mod_a"));
 
         // Module B does NOT have a serializer.
-        sp.GetKeyedService<EventSerializer>("mod_b").Should().BeNull(
-            "module B did not call WithEventsFrom; its key must return null — not module A's serializer");
+        // module B did not call WithEventsFrom; its key must return null — not module A's serializer
+        Assert.Null(sp.GetKeyedService<EventSerializer>("mod_b"));
 
         // No unkeyed serializer visible to either module.
-        sp.GetService<EventSerializer>().Should().BeNull(
-            "no unkeyed EventSerializer must exist; multi-module correctness requires keyed-only registration");
+        // no unkeyed EventSerializer must exist; multi-module correctness requires keyed-only
+        // registration
+        Assert.Null(sp.GetService<EventSerializer>());
     }
 
     /// <summary>
@@ -278,14 +275,15 @@ public sealed class MultiModuleSerializerIsolationTests
 
         // The registry is built with ModuleKey = context.ModuleKey inside the Register callback,
         // so capturedRegistry is non-null only after AddAlberto processes the deferred registrations.
-        capturedRegistry.Should().NotBeNull("WithOutbox must invoke the configureMappings delegate");
-        capturedRegistry!.ModuleKey.Should().Be("msg_mod",
-            "the registry must be constructed with ModuleKey = context.ModuleKey so that " +
-            "Map extension methods always resolve the correct module-keyed EventSerializer");
+        // WithOutbox must invoke the configureMappings delegate
+        Assert.NotNull(capturedRegistry);
+        // the registry must be constructed with ModuleKey = context.ModuleKey so that Map extension
+        // methods always resolve the correct module-keyed EventSerializer
+        Assert.Equal("msg_mod", capturedRegistry!.ModuleKey);
 
         // The keyed serializer for "msg_mod" is resolvable via the module key.
-        sp.GetKeyedService<EventSerializer>("msg_mod").Should().NotBeNull(
-            "the serializer the outbox mapper would resolve must exist under the module key");
+        // the serializer the outbox mapper would resolve must exist under the module key
+        Assert.NotNull(sp.GetKeyedService<EventSerializer>("msg_mod"));
 
         await Task.CompletedTask; // keeps the method async for potential future I/O.
     }

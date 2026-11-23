@@ -2,7 +2,6 @@ using Alberto.Commands;
 using System.Collections.Immutable;
 using System.Reflection;
 using Alberto.Analyzers;
-using FluentAssertions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
@@ -23,8 +22,7 @@ public class DiscardedPipelineAnalyzerTests
         var diagnostics = await AnalyzeBody(
             "store.Handle(command).Load(Boundary, new OrderState(), Apply).Decide(Decide);");
 
-        diagnostics.Should().ContainSingle()
-            .Which.Id.Should().Be(DiscardedPipelineAnalyzer.DiagnosticId);
+        Assert.Equal(DiscardedPipelineAnalyzer.DiagnosticId, Assert.Single(diagnostics).Id);
     }
 
     [Fact]
@@ -34,8 +32,7 @@ public class DiscardedPipelineAnalyzerTests
         // let alone written, which is exactly why the compiler has nothing to object to.
         var diagnostics = await AnalyzeBody("store.Handle(command);");
 
-        diagnostics.Should().ContainSingle()
-            .Which.Id.Should().Be(DiscardedPipelineAnalyzer.DiagnosticId);
+        Assert.Equal(DiscardedPipelineAnalyzer.DiagnosticId, Assert.Single(diagnostics).Id);
     }
 
     [Fact]
@@ -45,7 +42,8 @@ public class DiscardedPipelineAnalyzerTests
             "await store.Handle(command).Load(Boundary, new OrderState(), Apply)"
             + ".Decide(Decide).Commit(default);");
 
-        diagnostics.Should().BeEmpty("the pipeline reached a terminal operation and ran");
+        // the pipeline reached a terminal operation and ran
+        Assert.Empty(diagnostics);
     }
 
     [Fact]
@@ -58,7 +56,7 @@ public class DiscardedPipelineAnalyzerTests
             + ".Decide(Decide);"
             + "await pipeline.Commit(default);");
 
-        diagnostics.Should().BeEmpty();
+        Assert.Empty(diagnostics);
     }
 
     [Fact]
@@ -68,7 +66,7 @@ public class DiscardedPipelineAnalyzerTests
         // mechanism here too rather than a pragma.
         var diagnostics = await AnalyzeBody("_ = store.Handle(command);");
 
-        diagnostics.Should().BeEmpty();
+        Assert.Empty(diagnostics);
     }
 
     [Fact]
@@ -76,7 +74,8 @@ public class DiscardedPipelineAnalyzerTests
     {
         var diagnostics = await AnalyzeBody("command.ToString();");
 
-        diagnostics.Should().BeEmpty("the rule is about pipeline types, not about ignored results");
+        // the rule is about pipeline types, not about ignored results
+        Assert.Empty(diagnostics);
     }
 
     [Fact]
@@ -86,8 +85,10 @@ public class DiscardedPipelineAnalyzerTests
             "store.Handle(command).Load(Boundary, new OrderState(), Apply).Decide(Decide);");
 
         var message = diagnostics.Single().GetMessage();
-        message.Should().Contain("Decide", "the developer needs to know which stage they stopped at");
-        message.Should().Contain("Commit", "and what the statement was missing");
+        // the developer needs to know which stage they stopped at
+        Assert.Contains("Decide", message);
+        // and what the statement was missing
+        Assert.Contains("Commit", message);
     }
 
     // ── harness ───────────────────────────────────────────────────────────────
@@ -143,9 +144,8 @@ public class DiscardedPipelineAnalyzerTests
             .Where(d => d.Severity == DiagnosticSeverity.Error)
             .ToList();
 
-        errors.Should().BeEmpty(
-            "the probe must compile, or there would be no operations for the analyzer to see: {0}",
-            string.Join("; ", errors.Select(e => e.ToString())));
+        // The probe must compile before the analyzer can inspect its operations.
+        Assert.Empty(errors);
 
         var withAnalyzer = compilation.WithAnalyzers(
             [new DiscardedPipelineAnalyzer()]);

@@ -2,7 +2,6 @@ using System.Text.Json;
 using Alberto.Configuration;
 using Alberto.InMemory;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Subscriptions;
@@ -81,8 +80,8 @@ public sealed class ControlLoopGroupSuspensionTests
         // Generously longer than the 10ms polling interval: a loop that was still running would
         // have taken these many times over.
         await Task.Delay(TimeSpan.FromMilliseconds(300), cancellationToken);
-        processor.ProcessedCount.Should().Be(
-            3, "a suspended loop must not consume — that is the whole point of suspending it");
+        // a suspended loop must not consume — that is the whole point of suspending it
+        Assert.Equal(3, processor.ProcessedCount);
 
         await suspension.DisposeAsync();
 

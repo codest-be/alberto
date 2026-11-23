@@ -2,7 +2,6 @@ using System.Diagnostics.Metrics;
 using Alberto.Append;
 using Alberto.Subscriptions;
 using Alberto.Telemetry;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Telemetry;
@@ -34,9 +33,9 @@ public sealed class WriteSideMetricsTests
         await new TelemetryAppendInterceptor(moduleKey: module)
             .OnAppendingAsync(Context(), _ => Task.FromResult(NoResult));
 
-        Keys(seen["alberto.append.duration"]).Should().BeEquivalentTo(["module", "outcome"]);
-        Value(seen["alberto.append.duration"], "outcome").Should().Be("success");
-        Keys(seen["alberto.events.appended"]).Should().BeEquivalentTo(["module"]);
+        Assert.Equivalent(new[] { "module", "outcome" }, Keys(seen["alberto.append.duration"]), strict: true);
+        Assert.Equal("success", Value(seen["alberto.append.duration"], "outcome"));
+        Assert.Equivalent(new[] { "module" }, Keys(seen["alberto.events.appended"]), strict: true);
     }
 
     [Fact]
@@ -48,7 +47,7 @@ public sealed class WriteSideMetricsTests
         await new TelemetryAppendInterceptor(moduleKey: $"{module}#eu")
             .OnAppendingAsync(Context(), _ => Task.FromResult(NoResult));
 
-        Keys(seen["alberto.append.duration"]).Should().BeEquivalentTo(["module", "shard", "outcome"]);
+        Assert.Equivalent(new[] { "module", "shard", "outcome" }, Keys(seen["alberto.append.duration"]), strict: true);
     }
 
     [Fact]
@@ -59,11 +58,11 @@ public sealed class WriteSideMetricsTests
 
         var act = () => new TelemetryAppendInterceptor(moduleKey: module)
             .OnAppendingAsync(Context(), _ => throw Conflict());
-        await act.Should().ThrowAsync<DcbConflictException>();
+        await Assert.ThrowsAnyAsync<DcbConflictException>(act);
 
-        Value(seen["alberto.append.duration"], "outcome").Should().Be("conflict");
-        Keys(seen["alberto.concurrency.conflicts"]).Should().BeEquivalentTo(["module", "kind"]);
-        Value(seen["alberto.concurrency.conflicts"], "kind").Should().Be("append");
+        Assert.Equal("conflict", Value(seen["alberto.append.duration"], "outcome"));
+        Assert.Equivalent(new[] { "module", "kind" }, Keys(seen["alberto.concurrency.conflicts"]), strict: true);
+        Assert.Equal("append", Value(seen["alberto.concurrency.conflicts"], "kind"));
     }
 
     [Fact]
@@ -74,9 +73,9 @@ public sealed class WriteSideMetricsTests
 
         var act = () => new TelemetryAppendInterceptor(moduleKey: module)
             .OnAppendingAsync(Context(), _ => throw new InvalidOperationException());
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        await Assert.ThrowsAnyAsync<InvalidOperationException>(act);
 
-        Value(seen["alberto.append.duration"], "outcome").Should().Be("error");
+        Assert.Equal("error", Value(seen["alberto.append.duration"], "outcome"));
     }
 
     [Fact]
@@ -103,8 +102,8 @@ public sealed class WriteSideMetricsTests
 
         await TelemetryConsumeMiddleware.Create()(ctx, () => Task.CompletedTask);
 
-        Keys(seen["alberto.event.age"]).Should().BeEquivalentTo(["processor", "module"]);
-        seen["alberto.event.age"].Value.Should().BeInRange(29, 60);
+        Assert.Equivalent(new[] { "processor", "module" }, Keys(seen["alberto.event.age"]), strict: true);
+        Assert.InRange(seen["alberto.event.age"].Value, 29, 60);
     }
 
     [Fact]
@@ -124,15 +123,26 @@ public sealed class WriteSideMetricsTests
         listener.Start();
 
         foreach (var name in new[] { "alberto.append.duration", "alberto.processing.duration", "alberto.outbox.delivery.latency" })
-            advice[name].Should().NotBeNull().And.Contain([0.001, 0.1, 10]);
-        advice["alberto.event.age"].Should().Contain([10, 3600]);
+        {
+            var boundaries = advice[name];
+            Assert.NotNull(boundaries);
+            Assert.Contains(0.001, boundaries);
+            Assert.Contains(0.1, boundaries);
+            Assert.Contains(10.0, boundaries);
+        }
+
+        var ageBoundaries = advice["alberto.event.age"];
+        Assert.NotNull(ageBoundaries);
+        Assert.Contains(10.0, ageBoundaries);
+        Assert.Contains(3600.0, ageBoundaries);
     }
 
     [Fact]
     public void Meter_version_is_derived_not_hard_coded()
     {
-        AlbertoMetrics.Version.Should().NotBe("1.0.0").And.NotContain("+");
-        AlbertoMetrics.Meter.Version.Should().Be(AlbertoMetrics.Version);
+        Assert.NotEqual("1.0.0", AlbertoMetrics.Version);
+        Assert.DoesNotContain("+", AlbertoMetrics.Version);
+        Assert.Equal(AlbertoMetrics.Version, AlbertoMetrics.Meter.Version);
     }
 
     private static Dictionary<string, (double Value, KeyValuePair<string, object?>[] Tags)> Capture(

@@ -1,5 +1,4 @@
 using Alberto.Benchmarks.Core;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Benchmarks;
@@ -23,8 +22,8 @@ public class ResultComparerTests
 
         var act = () => ResultComparer.Compare(baseline, candidate, Thresholds.Default);
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*different machine profiles*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        Assert.Contains("different machine profiles", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -35,9 +34,8 @@ public class ResultComparerTests
             Run(Profile, Measure("A", 101)),
             Thresholds.Default);
 
-        report.Deltas.Should().ContainSingle()
-            .Which.Verdict.Should().Be(ComparisonVerdict.Unchanged);
-        report.HasRegression.Should().BeFalse();
+        Assert.Equal(ComparisonVerdict.Unchanged, Assert.Single(report.Deltas).Verdict);
+        Assert.False(report.HasRegression);
     }
 
     [Fact]
@@ -49,9 +47,8 @@ public class ResultComparerTests
             Run(Profile, Measure("A", 150, stdDevNs: 1.0)),
             Thresholds.Default);
 
-        report.Deltas.Should().ContainSingle()
-            .Which.Verdict.Should().Be(ComparisonVerdict.Regressed);
-        report.HasRegression.Should().BeTrue();
+        Assert.Equal(ComparisonVerdict.Regressed, Assert.Single(report.Deltas).Verdict);
+        Assert.True(report.HasRegression);
     }
 
     [Fact]
@@ -63,9 +60,8 @@ public class ResultComparerTests
             Run(Profile, Measure("A", 150, stdDevNs: 40.0)),
             Thresholds.Default);
 
-        report.Deltas.Should().ContainSingle()
-            .Which.Verdict.Should().Be(ComparisonVerdict.Unchanged);
-        report.HasRegression.Should().BeFalse();
+        Assert.Equal(ComparisonVerdict.Unchanged, Assert.Single(report.Deltas).Verdict);
+        Assert.False(report.HasRegression);
     }
 
     [Fact]
@@ -76,9 +72,8 @@ public class ResultComparerTests
             Run(Profile, Measure("A", 100, stdDevNs: 1.0)),
             Thresholds.Default);
 
-        report.Deltas.Should().ContainSingle()
-            .Which.Verdict.Should().Be(ComparisonVerdict.Improved);
-        report.HasRegression.Should().BeFalse();
+        Assert.Equal(ComparisonVerdict.Improved, Assert.Single(report.Deltas).Verdict);
+        Assert.False(report.HasRegression);
     }
 
     [Fact]
@@ -90,8 +85,7 @@ public class ResultComparerTests
             Run(Profile, Measure("A", 100, allocated: 1200)),
             Thresholds.Default);
 
-        report.Deltas.Should().ContainSingle()
-            .Which.Verdict.Should().Be(ComparisonVerdict.Regressed);
+        Assert.Equal(ComparisonVerdict.Regressed, Assert.Single(report.Deltas).Verdict);
     }
 
     [Fact]
@@ -103,8 +97,7 @@ public class ResultComparerTests
             Run(Profile, Measure("A", 100, stdDevNs: 500.0, allocated: 1200)),
             Thresholds.Default);
 
-        report.Deltas.Should().ContainSingle()
-            .Which.Verdict.Should().Be(ComparisonVerdict.Regressed);
+        Assert.Equal(ComparisonVerdict.Regressed, Assert.Single(report.Deltas).Verdict);
     }
 
     [Fact]
@@ -115,8 +108,8 @@ public class ResultComparerTests
             Run(Profile, Measure("A", 100), Measure("B", 100)),
             Thresholds.Default);
 
-        report.Deltas.Should().Contain(d => d.Key == "B" && d.Verdict == ComparisonVerdict.Added);
-        report.HasRegression.Should().BeFalse();
+        Assert.Contains(report.Deltas, d => d.Key == "B" && d.Verdict == ComparisonVerdict.Added);
+        Assert.False(report.HasRegression);
     }
 
     [Fact]
@@ -127,8 +120,8 @@ public class ResultComparerTests
             Run(Profile, Measure("A", 100)),
             Thresholds.Default);
 
-        report.Deltas.Should().Contain(d => d.Key == "B" && d.Verdict == ComparisonVerdict.Removed);
-        report.HasRegression.Should().BeFalse();
+        Assert.Contains(report.Deltas, d => d.Key == "B" && d.Verdict == ComparisonVerdict.Removed);
+        Assert.False(report.HasRegression);
     }
 
     [Fact]
@@ -139,13 +132,13 @@ public class ResultComparerTests
             Run(Profile, Measure("A", 105, stdDevNs: 1.0), Measure("B", 300, stdDevNs: 1.0)),
             Thresholds.Default);
 
-        report.Deltas[0].Key.Should().Be("B");
+        Assert.Equal("B", report.Deltas[0].Key);
     }
 
     [Fact]
     public void The_default_thresholds_are_twenty_percent_mean_and_ten_percent_allocations()
     {
-        Thresholds.Default.MeanPercent.Should().Be(20.0);
-        Thresholds.Default.AllocatedPercent.Should().Be(10.0);
+        Assert.Equal(20.0, Thresholds.Default.MeanPercent);
+        Assert.Equal(10.0, Thresholds.Default.AllocatedPercent);
     }
 }

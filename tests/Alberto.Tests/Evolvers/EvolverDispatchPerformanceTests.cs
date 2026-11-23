@@ -1,4 +1,3 @@
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests;
@@ -79,8 +78,8 @@ public sealed class EvolverDispatchPerformanceTests
 
         var state = evolver.Reconstitute(envelopes);
 
-        state.Count.Should().Be(1);
-        state.LastName.Should().Be("apple");
+        Assert.Equal(1, state.Count);
+        Assert.Equal("apple", state.LastName);
     }
 
     // -----------------------------------------------------------------------
@@ -117,12 +116,11 @@ public sealed class EvolverDispatchPerformanceTests
 
         var act = () => evolver.Reconstitute([envelope], initial: null, badDeserializer);
 
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*Upcaster for 'perf-order-placed'*")
-            .WithMessage("*PerfWrongEvent*")
-            .WithMessage("*PerfOrderPlaced*")
-            .WithMessage("*IEvolve<TState, TEvent>*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        Assert.Contains("Upcaster for 'perf-order-placed'", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("PerfWrongEvent", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("PerfOrderPlaced", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("IEvolve<TState, TEvent>", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     // -----------------------------------------------------------------------
@@ -174,8 +172,8 @@ public sealed class EvolverDispatchPerformanceTests
 
         var state = evolver.Reconstitute(envelopes);
 
-        state.Count.Should().Be(3);
-        state.Label.Should().Be("hits");
+        Assert.Equal(3, state.Count);
+        Assert.Equal("hits", state.Label);
     }
 
     // -----------------------------------------------------------------------
@@ -197,7 +195,7 @@ public sealed class EvolverDispatchPerformanceTests
         var state = evolver.Reconstitute(envelopes);
 
         // Only the one known event should have contributed.
-        state.Count.Should().Be(7);
-        state.Label.Should().Be("");
+        Assert.Equal(7, state.Count);
+        Assert.Equal("", state.Label);
     }
 }

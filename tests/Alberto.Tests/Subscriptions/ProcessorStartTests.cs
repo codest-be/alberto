@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Alberto.InMemory;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Subscriptions;
@@ -122,13 +121,13 @@ public sealed class ProcessorStartTests
 
         var reactor = await rig.StartAsync("mails", ProcessorStart.Head, maxConcurrency);
         await WaitUntilAsync(() => rig.CheckpointAsync("mails").Result is not null, "the start is seeded");
-        (await rig.CheckpointAsync("mails")).Should().Be(3);
+        Assert.Equal(3, await rig.CheckpointAsync("mails"));
 
         await rig.AppendAsync("new-1", "new-2");
         await WaitUntilAsync(() => reactor.Handled.Count >= 2, "the new events are handled");
         await SettleAsync();
 
-        reactor.Handled.Should().BeEquivalentTo(["new-1", "new-2"]);
+        Assert.Equivalent(new[] { "new-1", "new-2" }, reactor.Handled, strict: true);
     }
 
     [Fact]
@@ -139,16 +138,17 @@ public sealed class ProcessorStartTests
 
         var reactor = await rig.StartAsync("mails", ProcessorStart.Head);
         await SettleAsync();
-        (await rig.CheckpointAsync("mails")).Should().BeNull("a cold head reads 0, which would replay the log");
+        // a cold head reads 0, which would replay the log
+        Assert.Null((await rig.CheckpointAsync("mails")));
 
         await rig.StartHeadAsync();
         await WaitUntilAsync(() => rig.CheckpointAsync("mails").Result is not null, "the start is seeded");
-        (await rig.CheckpointAsync("mails")).Should().Be(2);
+        Assert.Equal(2, await rig.CheckpointAsync("mails"));
 
         await rig.AppendAsync("new-1");
         await WaitUntilAsync(() => reactor.Handled.Count >= 1, "the new event is handled");
         await SettleAsync();
-        reactor.Handled.Should().Equal("new-1");
+        Assert.Equal(["new-1"], reactor.Handled);
     }
 
     [Fact]
@@ -164,8 +164,9 @@ public sealed class ProcessorStartTests
 
         await WaitUntilAsync(() => reactor.Handled.Count >= 3, "e3 to e5 are handled");
         await SettleAsync();
-        reactor.Handled.Should().Equal("e3", "e4", "e5");
-        (await rig.CheckpointAsync("mails")).Should().Be(2, "the old row is left for a rollback");
+        Assert.Equal(["e3", "e4", "e5"], reactor.Handled);
+        // the old row is left for a rollback
+        Assert.Equal(2, await rig.CheckpointAsync("mails"));
     }
 
     [Fact]
@@ -181,7 +182,7 @@ public sealed class ProcessorStartTests
 
         await WaitUntilAsync(() => reactor.Handled.Count >= 3, "e2 to e4 are handled");
         await SettleAsync();
-        reactor.Handled.Should().Equal("e2", "e3", "e4");
+        Assert.Equal(["e2", "e3", "e4"], reactor.Handled);
     }
 
     [Fact]
@@ -194,7 +195,7 @@ public sealed class ProcessorStartTests
         var reactor = await rig.StartAsync("mails-v2", ProcessorStart.CheckpointOf("never-ran"));
 
         await WaitUntilAsync(() => reactor.Handled.Count >= 2, "the whole log is handled");
-        reactor.Handled.Should().Equal("e1", "e2");
+        Assert.Equal(["e1", "e2"], reactor.Handled);
     }
 
     [Fact]
@@ -209,7 +210,7 @@ public sealed class ProcessorStartTests
 
         await WaitUntilAsync(() => reactor.Handled.Count >= 2, "e2 and e3 are handled");
         await SettleAsync();
-        reactor.Handled.Should().Equal("e2", "e3");
+        Assert.Equal(["e2", "e3"], reactor.Handled);
     }
 
     [Fact]
@@ -222,7 +223,7 @@ public sealed class ProcessorStartTests
         var shadow = await rig.StartAsync("summary::rebuild::2", ProcessorStart.Head);
 
         await WaitUntilAsync(() => shadow.Handled.Count >= 2, "the shadow replays everything");
-        shadow.Handled.Should().Equal("e1", "e2");
+        Assert.Equal(["e1", "e2"], shadow.Handled);
     }
 
     [Fact]
@@ -230,6 +231,6 @@ public sealed class ProcessorStartTests
     {
         var act = () => ProcessorStart.CheckpointOf();
 
-        act.Should().Throw<ArgumentException>();
+        Assert.ThrowsAny<ArgumentException>(act);
     }
 }

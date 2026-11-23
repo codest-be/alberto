@@ -4,7 +4,6 @@ using Alberto.Projections;
 using Alberto.Subscriptions;
 using Alberto.Tests.Infrastructure;
 using Alberto.Upcasting;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -223,9 +222,10 @@ public sealed class EfProjectionUpcastingTests(EfProjectionUpcastingFixture fixt
 
         // Assert — upcaster filled Country; without it Country is null (raw V1 JSON)
         var entity = await fixture.ReadEntityAsync(orderId.ToString());
-        entity.Should().NotBeNull("the projection should have written the entity");
-        entity!.Country.Should().Be("upcasted-country",
-            "the V1→V2 upcaster should have transformed the event before the handler applied it");
+        // the projection should have written the entity
+        Assert.NotNull(entity);
+        // the V1→V2 upcaster should have transformed the event before the handler applied it
+        Assert.Equal("upcasted-country", entity!.Country);
     }
 
     // -----------------------------------------------------------------------
@@ -266,10 +266,9 @@ public sealed class EfProjectionUpcastingTests(EfProjectionUpcastingFixture fixt
 
         // Assert — shadow entity at rebuild version 2 has Country from the upcaster
         var entity = await fixture.ReadEntityAsync(orderId.ToString(), rebuildShadowVersion);
-        entity.Should().NotBeNull(
-            "the rebuild-shadow projection should have written the entity at version 2");
-        entity!.Country.Should().Be("upcasted-country",
-            "the V1→V2 upcaster fires on the rebuild-shadow path after the fix, " +
-            "just as on the live path");
+        // the rebuild-shadow projection should have written the entity at version 2
+        Assert.NotNull(entity);
+        // the V1→V2 upcaster fires on the rebuild-shadow path after the fix, just as on the live path
+        Assert.Equal("upcasted-country", entity!.Country);
     }
 }

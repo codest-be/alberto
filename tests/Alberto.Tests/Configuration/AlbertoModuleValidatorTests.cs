@@ -2,7 +2,6 @@ using System.Collections.Immutable;
 using Alberto.Configuration;
 using Alberto.Subscriptions;
 using Alberto.Tests.Testing;
-using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 
@@ -32,7 +31,7 @@ public class AlbertoModuleValidatorTests
     [Fact]
     public void A_well_formed_module_produces_no_failures()
     {
-        Run(Valid(Processor("orders-summary"))).Should().BeEmpty();
+        Assert.Empty(Run(Valid(Processor("orders-summary"))));
     }
 
     [Fact]
@@ -40,7 +39,7 @@ public class AlbertoModuleValidatorTests
     {
         var failures = Run(Valid() with { Backend = null });
 
-        failures.Should().ContainSingle().Which.Code.Should().Be("ALB0001");
+        Assert.Equal("ALB0001", Assert.Single(failures).Code);
     }
 
     [Fact]
@@ -48,8 +47,8 @@ public class AlbertoModuleValidatorTests
     {
         var failures = Run(Valid(Processor("same"), Processor("same")));
 
-        failures.Should().ContainSingle().Which.Code.Should().Be("ALB0002");
-        failures[0].Problem.Should().Contain("same");
+        Assert.Equal("ALB0002", Assert.Single(failures).Code);
+        Assert.Contains("same", failures[0].Problem);
     }
 
     [Fact]
@@ -57,7 +56,7 @@ public class AlbertoModuleValidatorTests
     {
         var definition = Valid() with { TenancyEnabled = true, Backend = new FakeBackend(supportsTenancy: false) };
 
-        Run(definition).Should().ContainSingle().Which.Code.Should().Be("ALB0003");
+        Assert.Equal("ALB0003", Assert.Single(Run(definition)).Code);
     }
 
     [Theory]
@@ -76,7 +75,7 @@ public class AlbertoModuleValidatorTests
             },
         };
 
-        Run(definition).Should().Contain(f => f.Code == "ALB0004");
+        Assert.Contains(Run(definition), f => f.Code == "ALB0004");
     }
 
     [Fact]
@@ -86,8 +85,8 @@ public class AlbertoModuleValidatorTests
 
         var failures = Run(Valid(Processor("busy", execution)));
 
-        failures.Should().ContainSingle().Which.Code.Should().Be("ALB0005");
-        failures[0].Problem.Should().Contain("busy");
+        Assert.Equal("ALB0005", Assert.Single(failures).Code);
+        Assert.Contains("busy", failures[0].Problem);
     }
 
     [Fact]
@@ -97,8 +96,8 @@ public class AlbertoModuleValidatorTests
 
         var failures = Run(Valid(Processor("batch-required", execution)));
 
-        failures.Should().ContainSingle().Which.Code.Should().Be("ALB0022");
-        failures[0].Problem.Should().Contain("batch-required");
+        Assert.Equal("ALB0022", Assert.Single(failures).Code);
+        Assert.Contains("batch-required", failures[0].Problem);
     }
 
     [Theory]
@@ -107,7 +106,7 @@ public class AlbertoModuleValidatorTests
     [InlineData("has space")]
     public void A_malformed_processor_id_fails_with_ALB0006(string processorId)
     {
-        Run(Valid(Processor(processorId))).Should().Contain(f => f.Code == "ALB0006");
+        Assert.Contains(Run(Valid(Processor(processorId))), f => f.Code == "ALB0006");
     }
 
     [Fact]
@@ -118,7 +117,7 @@ public class AlbertoModuleValidatorTests
             ControlLoop = new ControlLoopOptions { Retry = new RetryOptions { MaxRetries = -1 } },
         };
 
-        Run(definition).Should().Contain(f => f.Code == "ALB0007");
+        Assert.Contains(Run(definition), f => f.Code == "ALB0007");
     }
 
     [Fact]
@@ -127,7 +126,7 @@ public class AlbertoModuleValidatorTests
         var backendFailure = new AlbertoValidationFailure("ALB9999", "Backend problem.", "Backend remedy.");
         var definition = Valid() with { Backend = new FakeBackend(true, backendFailure) };
 
-        Run(definition).Should().Contain(backendFailure);
+        Assert.Contains(backendFailure, Run(definition));
     }
 
     [Fact]
@@ -139,7 +138,8 @@ public class AlbertoModuleValidatorTests
             ControlLoop = new ControlLoopOptions { BatchSize = 0 },
         };
 
-        Run(definition).Select(f => f.Code).Should().Contain(["ALB0001", "ALB0002", "ALB0004"]);
+        var codes = Run(definition).Select(f => f.Code).ToArray();
+        Assert.All(new[] { "ALB0001", "ALB0002", "ALB0004" }, code => Assert.Contains(code, codes));
     }
 
     [Fact]
@@ -149,15 +149,16 @@ public class AlbertoModuleValidatorTests
 
         var result = new AlbertoModuleValidator().Validate("orders", definition);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("ALB0001").And.Contain("ALB0002");
+        Assert.True(result.Failed);
+        Assert.Contains("ALB0001", result.FailureMessage);
+        Assert.Contains("ALB0002", result.FailureMessage);
     }
 
     [Fact]
     public void Validate_succeeds_for_a_well_formed_module()
     {
-        new AlbertoModuleValidator()
+        Assert.True(new AlbertoModuleValidator()
             .Validate("orders", Valid(Processor("ok")))
-            .Succeeded.Should().BeTrue();
+            .Succeeded);
     }
 }

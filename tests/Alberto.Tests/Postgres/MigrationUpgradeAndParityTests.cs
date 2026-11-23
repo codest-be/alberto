@@ -2,7 +2,6 @@ using System.Reflection;
 using Alberto.Postgres;
 using Alberto.DeadLetters;
 using Alberto.TestInfrastructure;
-using FluentAssertions;
 using Npgsql;
 using Testcontainers.PostgreSql;
 using Xunit;
@@ -125,32 +124,30 @@ public sealed class MigrationUpgradeAndParityTests
 
         // Phase 2: run the full migrator — should only apply 002+ since 001 is journaled.
         var result = PostgresMigrator.Migrate(connectionString, singleTenant: false);
-        result.Successful.Should().BeTrue(because: result.Error?.Message ?? "migration failed");
+        Assert.True(result.Successful, result.Error?.Message ?? "migration failed");
 
         // The migrator should have run 002_QueryFunctions.sql.
-        result.ExecutedScripts.Should().NotBeEmpty(because: "002_QueryFunctions.sql must have been applied");
-        result.ExecutedScripts.Should().OnlyContain(
-            s => ParseScriptNumber(s, MultiTenantPrefix) >= 2,
-            because: "only scripts numbered 002 or later should have been executed in phase 2");
+        // 002_QueryFunctions.sql must have been applied
+        Assert.NotEmpty(result.ExecutedScripts);
+        // only scripts numbered 002 or later should have been executed in phase 2
+        Assert.NotEmpty(result.ExecutedScripts);
+        Assert.All(result.ExecutedScripts, s => Assert.True(ParseScriptNumber(s, MultiTenantPrefix) >= 2));
 
         // Assert expected schema shape after the full migration.
         await using var conn = new NpgsqlConnection(connectionString);
         await conn.OpenAsync();
 
         // 009: alberto_read_by_types_and_tags is a new function introduced in script 009.
-        (await FunctionExistsAsync(conn, "alberto_read_by_types_and_tags"))
-            .Should().BeTrue(because: "function added by migration 009 must exist after upgrade");
+        Assert.True((await FunctionExistsAsync(conn, "alberto_read_by_types_and_tags")), "function added by migration 009 must exist after upgrade");
 
         // 025: the notify moved off alberto_events and into the append functions.
         await AssertAppendNotifiesOnceAsync(conn);
 
         // 011: checkpoint table must have fillfactor=70.
-        (await TableHasFillfactorAsync(conn, "alberto_processor_checkpoints", fillfactor: 70))
-            .Should().BeTrue(because: "migration 011 sets fillfactor=70 on the checkpoint table");
+        Assert.True((await TableHasFillfactorAsync(conn, "alberto_processor_checkpoints", fillfactor: 70)), "migration 011 sets fillfactor=70 on the checkpoint table");
 
         // 012 (multi-tenant only): alberto_tenants catalog table must exist.
-        (await TableExistsAsync(conn, "alberto_tenants"))
-            .Should().BeTrue(because: "migration 012 creates the alberto_tenants catalog table");
+        Assert.True((await TableExistsAsync(conn, "alberto_tenants")), "migration 012 creates the alberto_tenants catalog table");
 
         // 016: existing outbox tables must gain the complete leased-claim fence.
         await AssertOutboxClaimLeaseColumnsExistAsync(conn);
@@ -178,8 +175,7 @@ public sealed class MigrationUpgradeAndParityTests
         await AssertUnlistenedNotifyTriggersAreGoneAsync(conn);
 
         // Core invariant: alberto_events must still have the tenant_id column.
-        (await ColumnExistsAsync(conn, "alberto_events", "tenant_id"))
-            .Should().BeTrue(because: "multi-tenant schema must retain the tenant_id column on alberto_events");
+        Assert.True((await ColumnExistsAsync(conn, "alberto_events", "tenant_id")), "multi-tenant schema must retain the tenant_id column on alberto_events");
     }
 
     [Fact]
@@ -194,27 +190,26 @@ public sealed class MigrationUpgradeAndParityTests
 
         // Phase 2: run the full migrator — should only apply 002+ since 001 is journaled.
         var result = PostgresMigrator.Migrate(connectionString, singleTenant: true);
-        result.Successful.Should().BeTrue(because: result.Error?.Message ?? "migration failed");
+        Assert.True(result.Successful, result.Error?.Message ?? "migration failed");
 
-        result.ExecutedScripts.Should().NotBeEmpty(because: "002_QueryFunctions.sql must have been applied");
-        result.ExecutedScripts.Should().OnlyContain(
-            s => ParseScriptNumber(s, SingleTenantPrefix) >= 2,
-            because: "only scripts numbered 002 or later should have been executed in phase 2");
+        // 002_QueryFunctions.sql must have been applied
+        Assert.NotEmpty(result.ExecutedScripts);
+        // only scripts numbered 002 or later should have been executed in phase 2
+        Assert.NotEmpty(result.ExecutedScripts);
+        Assert.All(result.ExecutedScripts, s => Assert.True(ParseScriptNumber(s, SingleTenantPrefix) >= 2));
 
         // Assert expected schema shape after the full migration.
         await using var conn = new NpgsqlConnection(connectionString);
         await conn.OpenAsync();
 
         // 009: alberto_read_by_types_and_tags is a new function introduced in script 009.
-        (await FunctionExistsAsync(conn, "alberto_read_by_types_and_tags"))
-            .Should().BeTrue(because: "function added by migration 009 must exist after upgrade");
+        Assert.True((await FunctionExistsAsync(conn, "alberto_read_by_types_and_tags")), "function added by migration 009 must exist after upgrade");
 
         // 025: the notify moved off alberto_events and into the append functions.
         await AssertAppendNotifiesOnceAsync(conn);
 
         // 011: checkpoint table must have fillfactor=70.
-        (await TableHasFillfactorAsync(conn, "alberto_processor_checkpoints", fillfactor: 70))
-            .Should().BeTrue(because: "migration 011 sets fillfactor=70 on the checkpoint table");
+        Assert.True((await TableHasFillfactorAsync(conn, "alberto_processor_checkpoints", fillfactor: 70)), "migration 011 sets fillfactor=70 on the checkpoint table");
 
         // 016: existing outbox tables must gain the complete leased-claim fence.
         await AssertOutboxClaimLeaseColumnsExistAsync(conn);
@@ -242,8 +237,7 @@ public sealed class MigrationUpgradeAndParityTests
         await AssertUnlistenedNotifyTriggersAreGoneAsync(conn);
 
         // Core invariant: single-tenant schema must NOT have a tenant_id column on events.
-        (await ColumnExistsAsync(conn, "alberto_events", "tenant_id"))
-            .Should().BeFalse(because: "single-tenant schema must not have a tenant_id column on alberto_events");
+        Assert.False((await ColumnExistsAsync(conn, "alberto_events", "tenant_id")), "single-tenant schema must not have a tenant_id column on alberto_events");
     }
 
     // =========================================================================
@@ -268,9 +262,9 @@ public sealed class MigrationUpgradeAndParityTests
 
         // Every single-tenant script must exist in the multi-tenant set.
         var missingInMultiTenant = stNames.Except(mtNames).ToList();
-        missingInMultiTenant.Should().BeEmpty(
-            because: "every single-tenant migration must have a corresponding multi-tenant migration " +
-                     "— add the missing script(s) to the multi-tenant Migrations folder");
+        // every single-tenant migration must have a corresponding multi-tenant migration — add the
+        // missing script(s) to the multi-tenant Migrations folder
+        Assert.Empty(missingInMultiTenant);
 
         // Single-tenant scripts that appear only in multi-tenant set (like 012) are acceptable
         // (tenant-specific additions), but any scripts that exist ONLY in single-tenant are a bug.
@@ -300,9 +294,9 @@ public sealed class MigrationUpgradeAndParityTests
             .Select(kv => $"script {kv.Key:D3}: ST='{kv.Value}' vs MT='{mtByNumber[kv.Key]}'")
             .ToList();
 
-        drifted.Should().BeEmpty(
-            because: "shared script numbers must have the same file name in both variants — " +
-                     "rename the diverging script(s) so they match");
+        // shared script numbers must have the same file name in both variants — rename the diverging
+        // script(s) so they match
+        Assert.Empty(drifted);
     }
 
     /// <summary>
@@ -345,9 +339,9 @@ public sealed class MigrationUpgradeAndParityTests
             }
         }
 
-        violations.Should().BeEmpty(
-            because: "single-tenant migration scripts must not reference tenant_id in SQL — " +
-                     "remove or replace the offending lines or move the script to the multi-tenant set");
+        // single-tenant migration scripts must not reference tenant_id in SQL — remove or replace the
+        // offending lines or move the script to the multi-tenant set
+        Assert.Empty(violations);
     }
 
     /// <summary>
@@ -393,9 +387,9 @@ public sealed class MigrationUpgradeAndParityTests
             }
         }
 
-        violations.Should().BeEmpty(
-            because: "multi-tenant event-read functions in scripts 001-009 must include a p_tenant_id " +
-                     "parameter — a read function missing this parameter would silently return cross-tenant data");
+        // multi-tenant event-read functions in scripts 001-009 must include a p_tenant_id parameter — a
+        // read function missing this parameter would silently return cross-tenant data
+        Assert.Empty(violations);
     }
 
     /// <summary>
@@ -451,10 +445,9 @@ public sealed class MigrationUpgradeAndParityTests
             }
         }
 
-        violations.Should().BeEmpty(
-            because: "ADD CONSTRAINT … CHECK must be declared NOT VALID so it does not scan the " +
-                     "table under an ACCESS EXCLUSIVE lock — move the scan into a later script's " +
-                     "ALTER TABLE … VALIDATE CONSTRAINT");
+        // ADD CONSTRAINT … CHECK must be declared NOT VALID so it does not scan the table under an ACCESS
+        // EXCLUSIVE lock — move the scan into a later script's ALTER TABLE … VALIDATE CONSTRAINT
+        Assert.Empty(violations);
     }
 
     /// <summary>
@@ -492,18 +485,13 @@ public sealed class MigrationUpgradeAndParityTests
             var variant = singleTenant ? "single-tenant" : "multi-tenant";
 
             var unvalidated = addedNotValid.Keys.Except(validated.Keys).ToList();
-            unvalidated.Should().BeEmpty(
-                because: $"[{variant}] a constraint added NOT VALID never verifies the rows that " +
-                         "already existed until a later script runs VALIDATE CONSTRAINT on it");
+            Assert.Empty(unvalidated);
 
             var validatedTooEarly = addedNotValid
                 .Where(kv => validated.TryGetValue(kv.Key, out var at) && at <= kv.Value)
                 .Select(kv => $"{kv.Key}: added in {kv.Value:D3}, validated in {validated[kv.Key]:D3}")
                 .ToList();
-            validatedTooEarly.Should().BeEmpty(
-                because: $"[{variant}] VALIDATE must run in a strictly later script than the ADD — " +
-                         "DbUp wraps each script in one transaction, so validating in the same " +
-                         "script holds the ADD's ACCESS EXCLUSIVE lock across the scan");
+            Assert.Empty(validatedTooEarly);
         }
     }
 
@@ -670,7 +658,7 @@ public sealed class MigrationUpgradeAndParityTests
         }
 
         var result = PostgresMigrator.Migrate(connectionString, singleTenant: singleTenant);
-        result.Successful.Should().BeTrue(because: result.Error?.Message ?? "migration failed");
+        Assert.True(result.Successful, result.Error?.Message ?? "migration failed");
 
         var rows = new List<(string Id, string Message, bool RetryRequested)>();
         await using (var read = conn.CreateCommand())
@@ -684,12 +672,8 @@ public sealed class MigrationUpgradeAndParityTests
                 rows.Add((reader.GetString(0), reader.GetString(1), reader.GetBoolean(2)));
         }
 
-        rows.Should().Equal(
-            ("00000000-0000-0000-0000-000000000002", "latest", true),
-            ("00000000-0000-0000-0000-000000000003", "other processor", false),
-            ("00000000-0000-0000-0000-000000000005", "tie, higher id", false));
-        (await IndexExistsAsync(conn, "ux_alberto_dead_letter_processor_event"))
-            .Should().BeTrue(because: "migration 006 adds the unique (processor_id, event_id) index");
+        Assert.Equal([("00000000-0000-0000-0000-000000000002", "latest", true), ("00000000-0000-0000-0000-000000000003", "other processor", false), ("00000000-0000-0000-0000-000000000005", "tie, higher id", false)], rows);
+        Assert.True((await IndexExistsAsync(conn, "ux_alberto_dead_letter_processor_event")), "migration 006 adds the unique (processor_id, event_id) index");
     }
 
     // =====================================================================
@@ -749,15 +733,11 @@ public sealed class MigrationUpgradeAndParityTests
 
         foreach (var function in droppedFunctions)
         {
-            (await FunctionExistsAsync(conn, function))
-                .Should().BeFalse(because:
-                    $"migration 024 drops {function} — the wildcard tag boundary it served is no " +
+            Assert.False((await FunctionExistsAsync(conn, function)), $"migration 024 drops {function} — the wildcard tag boundary it served is no " +
                     "longer a query the DSL can express");
         }
 
-        (await IndexExistsAsync(conn, "ix_alberto_event_tag_positions_concept"))
-            .Should().BeFalse(because:
-                "migration 024 drops the concept index added by 022 — with no wildcard boundary to " +
+        Assert.False((await IndexExistsAsync(conn, "ix_alberto_event_tag_positions_concept")), "migration 024 drops the concept index added by 022 — with no wildcard boundary to " +
                 "resolve, it is pure insert cost on every tag row written");
     }
 
@@ -777,16 +757,13 @@ public sealed class MigrationUpgradeAndParityTests
     /// </remarks>
     private static async Task AssertAppendNotifiesOnceAsync(NpgsqlConnection conn)
     {
-        (await GetTriggerActionOrientationAsync(conn, "alberto_trg_notify_events"))
-            .Should().BeNull(because:
-                "migration 025 drops the notify trigger on alberto_events — no trigger placement " +
-                "can fire once per append while the append function inserts one event per statement");
+        // migration 025 drops the notify trigger on alberto_events — no trigger placement can fire once
+        // per append while the append function inserts one event per statement
+        Assert.Null((await GetTriggerActionOrientationAsync(conn, "alberto_trg_notify_events")));
 
         foreach (var function in new[] { "alberto_notify_events", "alberto_notify_events_batch" })
         {
-            (await FunctionExistsAsync(conn, function))
-                .Should().BeFalse(because:
-                    $"migration 025 drops {function} along with the trigger it backed");
+            Assert.False((await FunctionExistsAsync(conn, function)), $"migration 025 drops {function} along with the trigger it backed");
         }
 
         // _v2 and _v5 are absent by 024; the four below are the live append set, and 011 adds
@@ -805,9 +782,7 @@ public sealed class MigrationUpgradeAndParityTests
 
         foreach (var function in appendFunctions)
         {
-            (await FunctionSourceContainsAsync(conn, function, "pg_notify"))
-                .Should().BeTrue(because:
-                    $"migration 025 moves the events notification into {function}, so an append " +
+            Assert.True((await FunctionSourceContainsAsync(conn, function, "pg_notify")), $"migration 025 moves the events notification into {function}, so an append " +
                     "signals subscribers once when it finishes rather than once per event inserted");
         }
     }
@@ -855,9 +830,7 @@ public sealed class MigrationUpgradeAndParityTests
 
         foreach (var (trigger, table) in droppedTriggers)
         {
-            (await TriggerExistsAsync(conn, trigger, table))
-                .Should().BeFalse(because:
-                    $"migration 032 drops {trigger} — nothing LISTENs on the channel it raised, " +
+            Assert.False((await TriggerExistsAsync(conn, trigger, table)), $"migration 032 drops {trigger} — nothing LISTENs on the channel it raised, " +
                     "so every row it fired on paid the notify-queue commit lock for no consumer");
         }
 
@@ -870,9 +843,7 @@ public sealed class MigrationUpgradeAndParityTests
 
         foreach (var function in droppedFunctions)
         {
-            (await FunctionExistsAsync(conn, function))
-                .Should().BeFalse(because:
-                    $"migration 032 drops {function} along with the trigger it backed");
+            Assert.False((await FunctionExistsAsync(conn, function)), $"migration 032 drops {function} along with the trigger it backed");
         }
     }
 
@@ -976,8 +947,8 @@ public sealed class MigrationUpgradeAndParityTests
                                     'idx_alberto_projection_states_tenant_type',
                                     'idx_alberto_projection_states_type_version_cleanup')
                 """;
-            Convert.ToInt64(await cmd.ExecuteScalarAsync()).Should().Be(0,
-                because: "migration 008 drops the indexes that duplicate a surviving one");
+            // migration 008 drops the indexes that duplicate a surviving one
+            Assert.Equal(0, Convert.ToInt64(await cmd.ExecuteScalarAsync()));
         }
 
         await using var explain = conn.CreateCommand();
@@ -993,8 +964,8 @@ public sealed class MigrationUpgradeAndParityTests
         while (await reader.ReadAsync())
             plan.AppendLine(reader.GetString(0));
 
-        plan.ToString().Should().Contain("alberto_events_pkey",
-            because: "the bounded stable-head query must be a primary-key range scan, not a scan of the log");
+        // the bounded stable-head query must be a primary-key range scan, not a scan of the log
+        Assert.Contains("alberto_events_pkey", plan.ToString());
     }
 
     /// <summary>
@@ -1027,10 +998,9 @@ public sealed class MigrationUpgradeAndParityTests
             cmd.Parameters.AddWithValue("@name", name);
             var convalidated = await cmd.ExecuteScalarAsync();
 
-            convalidated.Should().NotBeNull(because: $"CHECK constraint {name} must exist after migration");
-            convalidated.Should().Be(true,
-                because: $"{name} is added NOT VALID, so a later migration must VALIDATE it — " +
-                         "otherwise rows that predate the constraint are never checked");
+            // CHECK constraint {name} must exist after migration
+            Assert.NotNull(convalidated);
+            Assert.Equal(true, convalidated);
         }
     }
 
@@ -1038,22 +1008,18 @@ public sealed class MigrationUpgradeAndParityTests
     {
         foreach (var column in new[] { "claim_id", "claimed_by", "claim_expires_at" })
         {
-            (await ColumnExistsAsync(conn, "alberto_outbox_entries", column))
-                .Should().BeTrue(
-                    because: $"migration 016 adds the outbox claim fence column {column}");
+            Assert.True((await ColumnExistsAsync(conn, "alberto_outbox_entries", column)), $"migration 016 adds the outbox claim fence column {column}");
         }
     }
 
     private static async Task AssertDeadLetterClaimFenceColumnExistsAsync(NpgsqlConnection conn)
     {
-        (await ColumnExistsAsync(conn, "alberto_dead_letter_events", "claim_id"))
-            .Should().BeTrue(because: "migration 017 adds the dead-letter claim fencing token");
+        Assert.True((await ColumnExistsAsync(conn, "alberto_dead_letter_events", "claim_id")), "migration 017 adds the dead-letter claim fencing token");
     }
 
     private static async Task AssertRebuildOperatorIntentColumnExistsAsync(NpgsqlConnection conn)
     {
-        (await ColumnExistsAsync(conn, "alberto_projection_rebuild_meta", "requested_action"))
-            .Should().BeTrue(because: "migration 018 adds coordinator-owned operator intent");
+        Assert.True((await ColumnExistsAsync(conn, "alberto_projection_rebuild_meta", "requested_action")), "migration 018 adds coordinator-owned operator intent");
     }
 
     private static async Task<bool> ColumnExistsAsync(
@@ -1096,10 +1062,10 @@ public sealed class MigrationUpgradeAndParityTests
     private static async Task AssertDeadLetterEventTypeColumnWidthAsync(NpgsqlConnection conn)
     {
         var maxLength = await GetColumnMaxLengthAsync(conn, "alberto_dead_letter_events", "event_type");
-        maxLength.Should().Be(500,
-            because: "migration 024 must widen dead_letter_events.event_type to VARCHAR(500) to match " +
-                     "alberto_events.event_type — the previous VARCHAR(200) silently rejected dead-lettering " +
-                     "any event whose type name exceeded 200 characters");
+        // migration 024 must widen dead_letter_events.event_type to VARCHAR(500) to match
+        // alberto_events.event_type — the previous VARCHAR(200) silently rejected dead-lettering any
+        // event whose type name exceeded 200 characters
+        Assert.Equal(500, maxLength);
     }
 
     // =========================================================================
@@ -1128,13 +1094,12 @@ public sealed class MigrationUpgradeAndParityTests
         var connectionString = container.GetConnectionString();
 
         var result = PostgresMigrator.Migrate(connectionString, singleTenant: false);
-        result.Successful.Should().BeTrue(because: result.Error?.Message ?? "migration failed");
+        Assert.True(result.Successful, result.Error?.Message ?? "migration failed");
 
         // A fully-qualified .NET type name commonly exceeds 200 characters.
         // 35 (prefix) + 170 ('A's) = 205 characters — comfortably above the old limit.
         var longEventType = "Acme.Commerce.Orders.Domain.Events." + new string('A', 170);
-        longEventType.Length.Should().BeGreaterThan(200,
-            because: "the test is only meaningful when the type name exceeds the old VARCHAR(200) cap");
+        Assert.True(longEventType.Length > 200, "the test is only meaningful when the type name exceeds the old VARCHAR(200) cap");
 
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         var store = new PostgresDeadLetterStore(dataSource, multiTenant: true);
@@ -1155,13 +1120,12 @@ public sealed class MigrationUpgradeAndParityTests
 
         // Before migration 024 this threw:
         //   PostgresException: value too long for type character varying(200)
-        await store.Invoking(s => s.StoreAsync(entry))
-            .Should().NotThrowAsync(
-                because: "migration 024 widens event_type to VARCHAR(500) so a 205-character type name must be accepted");
+        // migration 024 widens event_type to VARCHAR(500) so a 205-character type name must be accepted
+        await store.StoreAsync(entry);
 
         var stored = await store.GetAsync("proc-long-type-test");
-        stored.Should().ContainSingle(e => e.EventType == longEventType,
-            because: "the dead-lettered entry must be retrievable with the full type name intact");
+        // the dead-lettered entry must be retrievable with the full type name intact
+        Assert.Single(stored, e => e.EventType == longEventType);
     }
 
     /// <summary>
@@ -1176,7 +1140,7 @@ public sealed class MigrationUpgradeAndParityTests
         var connectionString = container.GetConnectionString();
 
         var result = PostgresMigrator.Migrate(connectionString, singleTenant: true);
-        result.Successful.Should().BeTrue(because: result.Error?.Message ?? "migration failed");
+        Assert.True(result.Successful, result.Error?.Message ?? "migration failed");
 
         var longEventType = "Acme.Commerce.Orders.Domain.Events." + new string('A', 170);
 
@@ -1197,12 +1161,11 @@ public sealed class MigrationUpgradeAndParityTests
             GlobalPosition = 1,
         };
 
-        await store.Invoking(s => s.StoreAsync(entry))
-            .Should().NotThrowAsync(
-                because: "migration 024 widens event_type to VARCHAR(500) so a 205-character type name must be accepted");
+        // migration 024 widens event_type to VARCHAR(500) so a 205-character type name must be accepted
+        await store.StoreAsync(entry);
 
         var stored = await store.GetAsync("proc-long-type-test");
-        stored.Should().ContainSingle(e => e.EventType == longEventType,
-            because: "the dead-lettered entry must be retrievable with the full type name intact");
+        // the dead-lettered entry must be retrievable with the full type name intact
+        Assert.Single(stored, e => e.EventType == longEventType);
     }
 }

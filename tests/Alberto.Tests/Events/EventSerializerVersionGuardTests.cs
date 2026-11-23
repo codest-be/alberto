@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Alberto.Upcasting;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests;
@@ -84,12 +83,12 @@ public sealed class EventSerializerVersionGuardTests
 
         var act = () => serializer.Deserialize(envelope);
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*stored at schema version 1*")
-            .WithMessage("*Version = 2*")
-            .WithMessage("*No upcaster is registered*")
-            .WithMessage("*UpcastingNotRequired = true*",
-                "the message has to name both remedies — write the upcaster, or waive the gap");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        Assert.Contains("stored at schema version 1", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Version = 2", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("No upcaster is registered", exception.Message, StringComparison.OrdinalIgnoreCase);
+        // the message has to name both remedies — write the upcaster, or waive the gap
+        Assert.Contains("UpcastingNotRequired = true", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -101,8 +100,8 @@ public sealed class EventSerializerVersionGuardTests
         var raw = JsonSerializer.Deserialize<GuardOrderV2>(
             JsonSerializer.Serialize(new GuardOrderV1(Guid.NewGuid(), 42m)));
 
-        raw!.Region.Should().BeNull(
-            "which is exactly the silent corruption the guard exists to turn into an exception");
+        // which is exactly the silent corruption the guard exists to turn into an exception
+        Assert.Null(raw!.Region);
     }
 
     [Fact]
@@ -127,9 +126,8 @@ public sealed class EventSerializerVersionGuardTests
         var envelope = GuardFixtures.Envelope(
             GuardFixtures.ShortChainSlug, version: 2, new GuardOrderV2(Guid.NewGuid(), 42m, "eu-west-1"));
 
-        serializer.Invoking(s => s.Deserialize(envelope))
-            .Should().Throw<InvalidOperationException>()
-            .WithMessage("*upcaster chain stops at version 2*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(() => serializer.Deserialize(envelope));
+        Assert.Contains("upcaster chain stops at version 2", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     // ── the gap is covered ─────────────────────────────────────────────────────────────────
@@ -152,8 +150,7 @@ public sealed class EventSerializerVersionGuardTests
         var result = serializer.Deserialize(GuardFixtures.Envelope(
             GuardFixtures.GuardedSlug, version: 1, new GuardOrderV1(orderId, 42m)));
 
-        result.Should().BeOfType<GuardOrderV2>()
-            .Which.Region.Should().Be("eu-west-1");
+        Assert.Equal("eu-west-1", Assert.IsType<GuardOrderV2>(result).Region);
     }
 
     [Fact]
@@ -165,9 +162,10 @@ public sealed class EventSerializerVersionGuardTests
         var result = serializer.Deserialize(GuardFixtures.Envelope(
             GuardFixtures.WaivedSlug, version: 1, new GuardOrderV1(orderId, 42m)));
 
-        var order = result.Should().BeOfType<WaivedOrderV2>().Which;
-        order.OrderId.Should().Be(orderId);
-        order.Region.Should().Be("eu-west-1", "the property default is the waiver's whole premise");
+        var order = Assert.IsType<WaivedOrderV2>(result);
+        Assert.Equal(orderId, order.OrderId);
+        // the property default is the waiver's whole premise
+        Assert.Equal("eu-west-1", order.Region);
     }
 
     // ── the guard stays out of the way ─────────────────────────────────────────────────────
@@ -180,7 +178,7 @@ public sealed class EventSerializerVersionGuardTests
         var result = serializer.Deserialize(GuardFixtures.Envelope(
             GuardFixtures.GuardedSlug, version: 2, new GuardOrderV2(Guid.NewGuid(), 42m, "us-east-1")));
 
-        result.Should().BeOfType<GuardOrderV2>().Which.Region.Should().Be("us-east-1");
+        Assert.Equal("us-east-1", Assert.IsType<GuardOrderV2>(result).Region);
     }
 
     [Fact]
@@ -192,7 +190,7 @@ public sealed class EventSerializerVersionGuardTests
         var result = serializer.Deserialize(GuardFixtures.Envelope(
             GuardFixtures.StableSlug, version: 1, new StableOrder(orderId, 42m)));
 
-        result.Should().BeOfType<StableOrder>().Which.OrderId.Should().Be(orderId);
+        Assert.Equal(orderId, Assert.IsType<StableOrder>(result).OrderId);
     }
 
     [Fact]
@@ -207,6 +205,6 @@ public sealed class EventSerializerVersionGuardTests
         var result = serializer.Deserialize(GuardFixtures.Envelope(
             GuardFixtures.StableSlug, version: 2, new GuardOrderV2(orderId, 42m, "us-east-1")));
 
-        result.Should().BeOfType<StableOrder>().Which.OrderId.Should().Be(orderId);
+        Assert.Equal(orderId, Assert.IsType<StableOrder>(result).OrderId);
     }
 }

@@ -4,7 +4,6 @@ using Alberto.InMemory;
 using Alberto.Checkpoints;
 using Alberto.Subscriptions;
 using Alberto.Telemetry;
-using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
@@ -212,8 +211,9 @@ public sealed class ControlLoopSequentialMutationTests
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
 
-        backend.CallCount.Should().Be(0, "checkpoint already at head — the loop must skip forward without reading");
-        state.Get("caught-up").Lag.Should().Be(0);
+        // checkpoint already at head — the loop must skip forward without reading
+        Assert.Equal(0, backend.CallCount);
+        Assert.Equal(0, state.Get("caught-up").Lag);
     }
 
     // Kills: NoCoverage branch at 242-245 ("no events between checkpoint and head — skip forward safely").
@@ -238,10 +238,11 @@ public sealed class ControlLoopSequentialMutationTests
         await loop.StopAsync(CancellationToken.None);
 
         var savedCheckpoint = await checkpoints.GetAsync("skip-forward", TestContext.Current.CancellationToken);
-        savedCheckpoint.Should().Be(5, "an empty read must still advance the checkpoint to the head");
-        state.Get("skip-forward").HasReported.Should().BeTrue();
-        state.Get("skip-forward").Lag.Should().Be(0);
-        processor.ProcessedCount.Should().Be(0);
+        // an empty read must still advance the checkpoint to the head
+        Assert.Equal(5, savedCheckpoint);
+        Assert.True(state.Get("skip-forward").HasReported);
+        Assert.Equal(0, state.Get("skip-forward").Lag);
+        Assert.Equal(0, processor.ProcessedCount);
     }
 
     // Kills: 254 (GlobalPosition > head filter removed), 260 (relevantEvents.Count > 0 => >= 0),
@@ -272,10 +273,13 @@ public sealed class ControlLoopSequentialMutationTests
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
 
-        loop.IsFaulted.Should().BeFalse("an empty visibleEvents ternary must not index the list (266)");
-        processor.ProcessedCount.Should().Be(0, "both events are past head and must be filtered out (254)");
-        processor.BatchCount.Should().Be(0, "zero relevant events must not trigger a batch dispatch (260)");
-        checkpoints.SaveCalls.Should().BeEmpty("checkpoint must not move when nothing became visible (270)");
+        Assert.False(loop.IsFaulted, "an empty visibleEvents ternary must not index the list (266)");
+        // both events are past head and must be filtered out (254)
+        Assert.Equal(0, processor.ProcessedCount);
+        // zero relevant events must not trigger a batch dispatch (260)
+        Assert.Equal(0, processor.BatchCount);
+        // checkpoint must not move when nothing became visible (270)
+        Assert.Empty(checkpoints.SaveCalls);
     }
 
     // The read is filtered to the handled types, so a short batch must vouch for everything up
@@ -307,8 +311,9 @@ public sealed class ControlLoopSequentialMutationTests
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
 
-        processor.ProcessedCount.Should().Be(1);
-        Volatile.Read(ref reads).Should().Be(1, "the events skipped by the filter must not be read a second time");
+        Assert.Equal(1, processor.ProcessedCount);
+        // the events skipped by the filter must not be read a second time
+        Assert.Equal(1, Volatile.Read(ref reads));
     }
 
     // Kills: 273 (ReportProgress(head - newCheckpoint) removed, or => head + newCheckpoint).
@@ -339,7 +344,7 @@ public sealed class ControlLoopSequentialMutationTests
         await loop.StopAsync(CancellationToken.None);
 
         // newCheckpoint == 3, head == 5 => lag must be exactly 2 (not 0/removed, not 8/head+newCheckpoint).
-        state.Get("lag-report").Lag.Should().Be(2);
+        Assert.Equal(2, state.Get("lag-report").Lag);
     }
 
     // Kills: 276 (events.Count < _batchSize => <=/negated), 277 (Delay removed).
@@ -376,14 +381,12 @@ public sealed class ControlLoopSequentialMutationTests
         await loop.StopAsync(CancellationToken.None);
 
         var timestamps = backend.CallTimestamps;
-        timestamps.Count.Should().BeGreaterThanOrEqualTo(3);
+        Assert.True(timestamps.Count >= 3);
         var gapAfterFullBatch = timestamps[1] - timestamps[0];
         var gapAfterStalledBatch = timestamps[2] - timestamps[1];
 
-        gapAfterFullBatch.Should().BeLessThan(TimeSpan.FromMilliseconds(150),
-            "a full batch (events.Count == batchSize) must not delay before the next read");
-        gapAfterStalledBatch.Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(200),
-            "a full batch with nothing at or below the head must delay before the next read");
+        Assert.True(gapAfterFullBatch < TimeSpan.FromMilliseconds(150), "a full batch (events.Count == batchSize) must not delay before the next read");
+        Assert.True(gapAfterStalledBatch >= TimeSpan.FromMilliseconds(200), "a full batch with nothing at or below the head must delay before the next read");
     }
 
     // Kills: 284 (LogCritical on fault removed).
@@ -407,7 +410,7 @@ public sealed class ControlLoopSequentialMutationTests
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
 
-        logger.Entries.Should().Contain(e =>
+        Assert.Contains(logger.Entries, e =>
             e.Level == LogLevel.Critical && e.Message.Contains("fault-logs") && e.Message.Contains("faulted"));
     }
 
@@ -430,10 +433,8 @@ public sealed class ControlLoopSequentialMutationTests
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
 
-        logger.Entries.Count(e => e.Level == LogLevel.Information && e.Message.Contains("starting"))
-            .Should().Be(1);
-        logger.Entries.Count(e => e.Level == LogLevel.Information && e.Message.Contains("stopped"))
-            .Should().Be(1);
+        Assert.Equal(1, logger.Entries.Count(e => e.Level == LogLevel.Information && e.Message.Contains("starting")));
+        Assert.Equal(1, logger.Entries.Count(e => e.Level == LogLevel.Information && e.Message.Contains("stopped")));
     }
 
     // Kills: 220 (return after RunPipelinedAsync removed) — without it, control falls through into
@@ -459,8 +460,9 @@ public sealed class ControlLoopSequentialMutationTests
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
 
-        logger.Entries.Count(e => e.Level == LogLevel.Information && e.Message.Contains("stopped"))
-            .Should().Be(1, "pipelined mode must return after RunPipelinedAsync, not fall through to the sequential loop's own 'stopped' log");
+        // pipelined mode must return after RunPipelinedAsync, not fall through to the sequential loop's
+        // own 'stopped' log
+        Assert.Equal(1, logger.Entries.Count(e => e.Level == LogLevel.Information && e.Message.Contains("stopped")));
     }
 
     // Kills: 75 (_timeProvider = timeProvider ?? TimeProvider.System => TimeProvider.System).
@@ -487,7 +489,7 @@ public sealed class ControlLoopSequentialMutationTests
 
         // If the injected FakeTimeProvider were ignored in favor of TimeProvider.System, this
         // would be a real wall-clock timestamp near "now", not the fixed instant below.
-        state.Get("fake-time").LastHeartbeatAt.Should().Be(fakeTime.GetUtcNow());
+        Assert.Equal(fakeTime.GetUtcNow(), state.Get("fake-time").LastHeartbeatAt);
     }
 
     // Kills: 522 (AlbertoMetrics.RecordProcessorLag removed).
@@ -508,15 +510,15 @@ public sealed class ControlLoopSequentialMutationTests
         await loop.StartAsync(cts.Token);
         await WaitForAsync(() => processor.ProcessedCount > 0, TestContext.Current.CancellationToken);
 
-        ObserveLag(processorId).Should().NotBeNull(
-            "RecordProcessorLag must have been called for this processor id at least once");
+        // RecordProcessorLag must have been called for this processor id at least once
+        Assert.NotNull(ObserveLag(processorId));
 
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
 
-        ObserveLag(processorId).Should().BeNull(
-            "a stopped processor's series is removed, not left reporting its last lag");
+        // a stopped processor's series is removed, not left reporting its last lag
+        Assert.Null(ObserveLag(processorId));
     }
 
     private static long? ObserveLag(string processorId)

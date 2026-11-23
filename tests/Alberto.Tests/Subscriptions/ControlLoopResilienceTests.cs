@@ -1,7 +1,6 @@
 using Alberto.InMemory;
 using Alberto.Checkpoints;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Subscriptions;
@@ -134,7 +133,7 @@ public sealed class ControlLoopResilienceTests
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
 
-        loop.IsFaulted.Should().BeFalse();
+        Assert.False(loop.IsFaulted);
     }
 
     [Theory]
@@ -152,6 +151,6 @@ public sealed class ControlLoopResilienceTests
         await loop.StopAsync(CancellationToken.None);
 
         // 10ms polling interval: a delayed loop reads ~30 times in 300ms, a spinning one thousands.
-        backend.Calls.Should().BeLessThan(100);
+        Assert.True(backend.Calls < 100);
     }
 }

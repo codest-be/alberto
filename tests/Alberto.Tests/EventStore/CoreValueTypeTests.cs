@@ -1,5 +1,4 @@
 using System.Text.Json;
-using FluentAssertions;
 using Xunit;
 using Alberto.Results;
 
@@ -55,8 +54,8 @@ public sealed class ResultGenericMutationTests
     {
         var result = Result<int>.Success(42);
 
-        result.IsSuccess.Should().BeTrue();
-        result.IsFailure.Should().BeFalse();
+        Assert.True(result.IsSuccess);
+        Assert.False(result.IsFailure);
     }
 
     [Fact]
@@ -64,8 +63,8 @@ public sealed class ResultGenericMutationTests
     {
         var result = Result<int>.Fail(SomeProblem);
 
-        result.IsSuccess.Should().BeFalse();
-        result.IsFailure.Should().BeTrue();
+        Assert.False(result.IsSuccess);
+        Assert.True(result.IsFailure);
     }
 
     // -----------------------------------------------------------------------
@@ -82,8 +81,8 @@ public sealed class ResultGenericMutationTests
         // is never initialised; the ?? [] fallback is what saves the caller.
         var result = default(Result<int>);
 
-        result.Problems.Should().BeEmpty();
-        result.Problems.Should().NotBeNull();
+        Assert.Empty(result.Problems);
+        Assert.NotNull(result.Problems);
     }
 
     [Fact]
@@ -91,8 +90,7 @@ public sealed class ResultGenericMutationTests
     {
         var result = Result<int>.Fail(SomeProblem);
 
-        result.Problems.Should().ContainSingle()
-              .Which.Code.Should().Be("test.error");
+        Assert.Equal("test.error", Assert.Single(result.Problems).Code);
     }
 
     [Fact]
@@ -103,9 +101,9 @@ public sealed class ResultGenericMutationTests
 
         var result = Result<int>.Fail(new[] { p1, p2 });
 
-        result.Problems.Should().HaveCount(2);
-        result.Problems.Should().Contain(x => x.Code == "err.one");
-        result.Problems.Should().Contain(x => x.Code == "err.two");
+        Assert.Equal(2, result.Problems.Count());
+        Assert.Contains(result.Problems, x => x.Code == "err.one");
+        Assert.Contains(result.Problems, x => x.Code == "err.two");
     }
 
     // -----------------------------------------------------------------------
@@ -120,8 +118,7 @@ public sealed class ResultGenericMutationTests
     {
         var result = Result<string>.Fail(SomeProblem);
 
-        result.IsSuccess.Should().BeFalse(
-            "Fail must set IsSuccess = false; a mutant flipping false→true is caught here");
+        Assert.False(result.IsSuccess, "Fail must set IsSuccess = false; a mutant flipping false→true is caught here");
     }
 
     [Fact]
@@ -129,8 +126,7 @@ public sealed class ResultGenericMutationTests
     {
         var result = Result<string>.Fail(new[] { SomeProblem });
 
-        result.IsSuccess.Should().BeFalse(
-            "Fail(IEnumerable) must set IsSuccess = false; a mutant flipping false→true is caught here");
+        Assert.False(result.IsSuccess, "Fail(IEnumerable) must set IsSuccess = false; a mutant flipping false→true is caught here");
     }
 
     // -----------------------------------------------------------------------
@@ -159,9 +155,9 @@ public sealed class ResultGenericMutationTests
             return n * 2;
         });
 
-        mapped.IsSuccess.Should().BeTrue("Map on a success must yield a success");
-        mapped.Value.Should().Be(14);
-        transformCalled.Should().BeTrue("the transform must be invoked on a success result");
+        Assert.True(mapped.IsSuccess, "Map on a success must yield a success");
+        Assert.Equal(14, mapped.Value);
+        Assert.True(transformCalled, "the transform must be invoked on a success result");
     }
 
     [Fact]
@@ -176,12 +172,10 @@ public sealed class ResultGenericMutationTests
             return n * 2;
         });
 
-        mapped.IsSuccess.Should().BeFalse("Map on a failure must yield a failure");
-        mapped.Problems.Should().ContainSingle()
-              .Which.Code.Should().Be("test.error",
-                  "the original problems must be preserved on the failure path");
-        transformCalled.Should().BeFalse(
-            "the transform must NOT be invoked when the input is a failed result; " +
+        Assert.False(mapped.IsSuccess, "Map on a failure must yield a failure");
+        // the original problems must be preserved on the failure path
+        Assert.Equal("test.error", Assert.Single(mapped.Problems).Code);
+        Assert.False(transformCalled, "the transform must NOT be invoked when the input is a failed result; " +
             "a mutant that flips the ternary would call it and this assertion would catch that");
     }
 }
@@ -199,29 +193,29 @@ public sealed class ResultNonGenericMutationTests
     public void IsFailure_IsFalse_WhenSuccess()
     {
         var result = Result.Success();
-        result.IsFailure.Should().BeFalse();
+        Assert.False(result.IsFailure);
     }
 
     [Fact]
     public void IsFailure_IsTrue_WhenFailed()
     {
         var result = Result.Fail(SomeProblem);
-        result.IsFailure.Should().BeTrue();
+        Assert.True(result.IsFailure);
     }
 
     [Fact]
     public void Problems_ReturnsEmpty_WhenDefaultStruct()
     {
         var result = default(Result);
-        result.Problems.Should().BeEmpty();
-        result.Problems.Should().NotBeNull();
+        Assert.Empty(result.Problems);
+        Assert.NotNull(result.Problems);
     }
 
     [Fact]
     public void Problems_ReturnsProblems_WhenFailed()
     {
         var result = Result.Fail(SomeProblem);
-        result.Problems.Should().ContainSingle().Which.Code.Should().Be("ng.error");
+        Assert.Equal("ng.error", Assert.Single(result.Problems).Code);
     }
 }
 
@@ -280,8 +274,8 @@ public sealed class EventEnvelopeExtensionsDeserializeTests
         // assignable to CvtExpectedType, so the guard must throw.
         var act = () => EventEnvelopeExtensions.DeserializeEvent<CvtExpectedType>(envelope, serializer);
 
-        act.Should().Throw<InvalidOperationException>()
-           .WithMessage("*CvtWrongReturnType*CvtExpectedType*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        Assert.Matches("(?is)CvtWrongReturnType.*CvtExpectedType", exception.Message);
     }
 
     // -----------------------------------------------------------------------
@@ -308,8 +302,8 @@ public sealed class EventEnvelopeExtensionsDeserializeTests
         // where the EV-1 version guard is the first check.
         var act = () => EventEnvelopeExtensions.DeserializeEvent<CvtEv1GuardEvent>(envelope, null);
 
-        act.Should().Throw<InvalidOperationException>()
-           .WithMessage("*cvt-ev1-guard*schema version 1*expects version 2*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        Assert.Matches("(?is)cvt-ev1-guard.*schema version 1.*expects version 2", exception.Message);
     }
 }
 
@@ -334,15 +328,15 @@ public sealed class EventTagMutationTests
     [Fact]
     public void EqualityOperator_ReturnsTrue_ForEqualTags()
     {
-        (TagA == TagB).Should().BeTrue();
-        (TagA != TagB).Should().BeFalse();
+        Assert.True((TagA == TagB));
+        Assert.False((TagA != TagB));
     }
 
     [Fact]
     public void EqualityOperator_ReturnsFalse_ForDifferentTags()
     {
-        (TagA == TagC).Should().BeFalse();
-        (TagA != TagC).Should().BeTrue();
+        Assert.False((TagA == TagC));
+        Assert.True((TagA != TagC));
     }
 
     // -----------------------------------------------------------------------
@@ -352,15 +346,15 @@ public sealed class EventTagMutationTests
     [Fact]
     public void GetHashCode_IsSame_ForEqualTags()
     {
-        TagA.GetHashCode().Should().Be(TagB.GetHashCode());
+        Assert.Equal(TagB.GetHashCode(), TagA.GetHashCode());
     }
 
     [Fact]
     public void GetHashCode_DiffersByConceptOrId()
     {
         var byDifferentConcept = new EventTag("customer", "123");
-        TagA.GetHashCode().Should().NotBe(byDifferentConcept.GetHashCode());
-        TagA.GetHashCode().Should().NotBe(TagC.GetHashCode());
+        Assert.NotEqual(byDifferentConcept.GetHashCode(), TagA.GetHashCode());
+        Assert.NotEqual(TagC.GetHashCode(), TagA.GetHashCode());
     }
 
     // -----------------------------------------------------------------------
@@ -374,8 +368,8 @@ public sealed class EventTagMutationTests
     public void ImplicitStringConversion_ReturnsValue()
     {
         string s = TagA;
-        s.Should().Be("order:123");
-        s.Should().Be(TagA.Value);
+        Assert.Equal("order:123", s);
+        Assert.Equal(TagA.Value, s);
     }
 
     // -----------------------------------------------------------------------
@@ -385,9 +379,8 @@ public sealed class EventTagMutationTests
     [Fact]
     public void Parse_WithoutColon_ThrowsArgumentException()
     {
-        var act = () => EventTag.Parse("nocolon");
-        act.Should().Throw<ArgumentException>()
-           .WithMessage("*Invalid tag format*");
+        var exception = Assert.ThrowsAny<ArgumentException>(() => EventTag.Parse("nocolon"));
+        Assert.Contains("Invalid tag format", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     // -----------------------------------------------------------------------
@@ -405,10 +398,9 @@ public sealed class EventTagMutationTests
         // Use a hypothetical reserved concept — not one Alberto uses today —
         // so the test fails only if the whole prefix guard is missing, not if
         // someone removes "_version" specifically.
-        var act = () => new EventTag("_causation", "abc");
-        act.Should().Throw<ArgumentException>()
-           .WithParameterName("concept")
-           .WithMessage("*reserved*");
+        var exception = Assert.ThrowsAny<ArgumentException>(() => new EventTag("_causation", "abc"));
+        Assert.Equal("concept", exception.ParamName);
+        Assert.Contains("reserved", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 }
 
@@ -431,15 +423,15 @@ public sealed class EventTypeMutationTests
     [Fact]
     public void EqualityOperator_ReturnsTrue_ForSameId_DifferentVersion()
     {
-        (TypeA == TypeB).Should().BeTrue();
-        (TypeA != TypeB).Should().BeFalse();
+        Assert.True((TypeA == TypeB));
+        Assert.False((TypeA != TypeB));
     }
 
     [Fact]
     public void EqualityOperator_ReturnsFalse_ForDifferentId()
     {
-        (TypeA == TypeC).Should().BeFalse();
-        (TypeA != TypeC).Should().BeTrue();
+        Assert.False((TypeA == TypeC));
+        Assert.True((TypeA != TypeC));
     }
 
     // -----------------------------------------------------------------------
@@ -449,7 +441,7 @@ public sealed class EventTypeMutationTests
     [Fact]
     public void GetHashCode_DiffersByEventTypeId()
     {
-        TypeA.GetHashCode().Should().NotBe(TypeC.GetHashCode());
+        Assert.NotEqual(TypeC.GetHashCode(), TypeA.GetHashCode());
     }
 
     // -----------------------------------------------------------------------
@@ -459,9 +451,8 @@ public sealed class EventTypeMutationTests
     [Fact]
     public void Constructor_RejectsVersionLessThanOne()
     {
-        var act = () => new EventType("order-placed", 0);
-        act.Should().Throw<ArgumentOutOfRangeException>()
-           .WithMessage("*version must be >= 1*");
+        var exception = Assert.ThrowsAny<ArgumentOutOfRangeException>(() => new EventType("order-placed", 0));
+        Assert.Contains("version must be >= 1", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     // -----------------------------------------------------------------------
@@ -471,17 +462,15 @@ public sealed class EventTypeMutationTests
     [Fact]
     public void FromType_ThrowsForTypeWithoutAttribute()
     {
-        var act = () => EventType.FromType(typeof(CvtNoAttributeEvent));
-        act.Should().Throw<InvalidOperationException>()
-           .WithMessage("*does not have an*[EventType]*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(() => EventType.FromType(typeof(CvtNoAttributeEvent)));
+        Assert.Matches("(?is)does not have an.*\\[EventType]", exception.Message);
     }
 
     [Fact]
     public void GetEventTypeId_ThrowsForTypeWithoutAttribute()
     {
-        var act = () => EventTypeAttribute.GetEventTypeId(typeof(CvtNoAttributeEvent));
-        act.Should().Throw<InvalidOperationException>()
-           .WithMessage("*does not have an*[EventType]*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(() => EventTypeAttribute.GetEventTypeId(typeof(CvtNoAttributeEvent)));
+        Assert.Matches("(?is)does not have an.*\\[EventType]", exception.Message);
     }
 
     // -----------------------------------------------------------------------
@@ -495,17 +484,18 @@ public sealed class EventTypeMutationTests
     public void ImplicitConversion_EventTypeToString_ReturnsId()
     {
         string s = TypeA;
-        s.Should().Be("order-placed");
+        Assert.Equal("order-placed", s);
         // Make sure version is NOT included in the string — that would break query filters.
-        s.Should().NotContain("1");
+        Assert.DoesNotContain("1", s);
     }
 
     [Fact]
     public void ImplicitConversion_StringToEventType_ProducesEventType()
     {
         EventType fromString = "order-placed";
-        fromString.Id.Should().Be("order-placed");
-        fromString.Version.Should().Be(1, "the string→EventType implicit conversion defaults to version 1");
+        Assert.Equal("order-placed", fromString.Id);
+        // the string→EventType implicit conversion defaults to version 1
+        Assert.Equal(1, fromString.Version);
     }
 }
 
@@ -532,12 +522,11 @@ public sealed class DcbConflictExceptionTests
         var inner = new Exception("db error");
         var ex = new DcbConflictException("conflict happened", inner);
 
-        ex.ConflictingPosition.Should().Be(-1);
-        ex.ExpectedPosition.Should().Be(-1);
-        ex.Query.IsEmpty.Should().BeTrue(
-            "the fallback constructor must set Query = DcbQuery.Empty");
-        ex.Message.Should().Be("conflict happened");
-        ex.InnerException.Should().BeSameAs(inner);
+        Assert.Equal(-1, ex.ConflictingPosition);
+        Assert.Equal(-1, ex.ExpectedPosition);
+        Assert.True(ex.Query.IsEmpty, "the fallback constructor must set Query = DcbQuery.Empty");
+        Assert.Equal("conflict happened", ex.Message);
+        Assert.Same(inner, ex.InnerException);
     }
 
     // -----------------------------------------------------------------------
@@ -555,11 +544,11 @@ public sealed class DcbConflictExceptionTests
             query: SomeQuery,
             innerException: inner);
 
-        ex.Message.Should().Be("DCB conflict");
-        ex.ConflictingPosition.Should().Be(99L);
-        ex.ExpectedPosition.Should().Be(50L);
-        ex.Query.Should().Be(SomeQuery);
-        ex.InnerException.Should().BeSameAs(inner);
+        Assert.Equal("DCB conflict", ex.Message);
+        Assert.Equal(99L, ex.ConflictingPosition);
+        Assert.Equal(50L, ex.ExpectedPosition);
+        Assert.Equal(SomeQuery, ex.Query);
+        Assert.Same(inner, ex.InnerException);
     }
 
     // -----------------------------------------------------------------------
@@ -576,12 +565,10 @@ public sealed class DcbConflictExceptionTests
 
         var problem = ex.ToProblem();
 
-        problem.Code.Should().Be(DcbConflictException.ProblemCode);
-        problem.Message.Should().Be(ex.Message);
-        problem.Details.Should().ContainKey("conflictingPosition")
-               .WhoseValue.Should().Be(77L);
-        problem.Details.Should().ContainKey("expectedPosition")
-               .WhoseValue.Should().Be(30L);
+        Assert.Equal(DcbConflictException.ProblemCode, problem.Code);
+        Assert.Equal(ex.Message, problem.Message);
+        Assert.Equal(77L, Assert.Contains("conflictingPosition", problem.Details));
+        Assert.Equal(30L, Assert.Contains("expectedPosition", problem.Details));
     }
 
     // -----------------------------------------------------------------------
@@ -594,8 +581,8 @@ public sealed class DcbConflictExceptionTests
         var ex = new DcbConflictException("oops", new Exception("inner"));
         var problem = ex.ToProblem();
 
-        problem.Code.Should().Be(DcbConflictException.ProblemCode);
-        problem.Details["conflictingPosition"].Should().Be(-1L);
-        problem.Details["expectedPosition"].Should().Be(-1L);
+        Assert.Equal(DcbConflictException.ProblemCode, problem.Code);
+        Assert.Equal(-1L, problem.Details["conflictingPosition"]);
+        Assert.Equal(-1L, problem.Details["expectedPosition"]);
     }
 }

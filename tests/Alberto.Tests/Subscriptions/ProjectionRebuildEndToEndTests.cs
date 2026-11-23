@@ -2,7 +2,6 @@ using System.Text.Json;
 using Alberto.Postgres;
 using Alberto.Projections;
 using Alberto.Tests.Infrastructure;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
@@ -235,19 +234,21 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
             },
             "the rebuild to be promoted", cancellationToken);
 
-        observed.Should().OnlyContain(points => points == 999 || points == 7,
-            "a reader moves from the complete old version straight to the complete new one");
+        // a reader moves from the complete old version straight to the complete new one
+        Assert.NotEmpty(observed);
+        Assert.All(observed, points => Assert.True(points == 999 || points == 7));
 
         var promoted = await StateAsync(cancellationToken);
         // Against the version the rebuild was actually handed, not versionBefore+1: an abort
         // consumes last_allocated_version without advancing active_version, so the two are only
         // the same number until something in this test's own history aborts.
-        promoted.ActiveVersion.Should().Be(started.RebuildingVersion,
-            "the promoted version must be the one the rebuild was writing into");
-        promoted.RebuildingVersion.Should().BeNull();
+        // the promoted version must be the one the rebuild was writing into
+        Assert.Equal(started.RebuildingVersion, promoted.ActiveVersion);
+        Assert.Null(promoted.RebuildingVersion);
 
         var afterPromotion = await ReadAsync(promoted.ActiveVersion, player, cancellationToken);
-        afterPromotion!.Points.Should().Be(7, "the rebuild replayed the log rather than copying the bad state");
+        // the rebuild replayed the log rather than copying the bad state
+        Assert.Equal(7, afterPromotion!.Points);
 
         // Advance the coordinator's clock well past the grace period so the sweep can reclaim,
         // wrapped in try/finally so a failure cannot leak an advanced clock into later tests.
@@ -296,10 +297,10 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
         // The coordinator's clock is frozen behind wall time, so the sweep's grace-period
         // gate holds: the superseded version's rows are guaranteed intact regardless of how
         // long the test took to detect the promotion.
-        (await ReadAsync(resolvedVersion, player, cancellationToken))
-            .Should().NotBeNull("a version cannot be deleted while readers may still be holding it")
-            .And.BeEquivalentTo(new Totals { Points = 5 },
-                "and what it holds is the complete old projection, not a half-deleted one");
+        // a version cannot be deleted while readers may still be holding it
+        Assert.NotNull((await ReadAsync(resolvedVersion, player, cancellationToken)));
+        // and what it holds is the complete old projection, not a half-deleted one
+        Assert.Equivalent(new Totals { Points = 5 }, (await ReadAsync(resolvedVersion, player, cancellationToken)), strict: true);
 
         // Advance the coordinator's clock well past the grace period so the sweep can reclaim,
         // wrapped in try/finally so a failure cannot leak an advanced clock into later tests.
@@ -378,12 +379,12 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
 
         var abandonedVersion = started.RebuildingVersion!.Value;
 
-        outcome.DiscardedVersion.Should().Be(abandonedVersion);
-        outcome.State.ActiveVersion.Should().Be(started.ActiveVersion,
-            "an abort must not move the version readers are served from");
-        outcome.State.RebuildingVersion.Should().BeNull();
+        Assert.Equal(abandonedVersion, outcome.DiscardedVersion);
+        // an abort must not move the version readers are served from
+        Assert.Equal(started.ActiveVersion, outcome.State.ActiveVersion);
+        Assert.Null(outcome.State.RebuildingVersion);
 
-        (await ReadAsync(started.ActiveVersion, player, cancellationToken))!.Points.Should().Be(8);
+        Assert.Equal(8, (await ReadAsync(started.ActiveVersion, player, cancellationToken))!.Points);
 
         // Advance the coordinator's clock well past the grace period so the sweep can reclaim.
         // The "live version undisturbed" assertion runs while advanced because it depends on the
@@ -395,8 +396,8 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
                 async () => await ReadAsync(abandonedVersion, player, cancellationToken) is null,
                 "the sweep to reclaim the abandoned version once its grace period has elapsed", cancellationToken);
 
-            (await ReadAsync(started.ActiveVersion, player, cancellationToken))!.Points.Should().Be(
-                8, "reclaiming the abandoned version must not disturb the live one");
+            // reclaiming the abandoned version must not disturb the live one
+            Assert.Equal(8, (await ReadAsync(started.ActiveVersion, player, cancellationToken))!.Points);
         }
         finally
         {
@@ -435,16 +436,16 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
 
         var second = await StartRebuildAsync(cancellationToken);
 
-        second.RebuildingVersion.Should().NotBe(abandonedVersion,
-            "a version a shadow loop may still be writing into cannot be reallocated");
+        // a version a shadow loop may still be writing into cannot be reallocated
+        Assert.NotEqual(abandonedVersion, second.RebuildingVersion);
 
         await WaitUntilAsync(
             async () => await StateAsync(cancellationToken) is { Status: RebuildStatus.Completed } s
                         && s.ActiveVersion == second.RebuildingVersion,
             "the second rebuild to be promoted", cancellationToken);
 
-        (await ReadAsync(second.RebuildingVersion!.Value, player, cancellationToken))!.Points.Should().Be(6,
-            "replaying one event of 6 points onto an aborted rebuild's leftovers would read 12");
+        // replaying one event of 6 points onto an aborted rebuild's leftovers would read 12
+        Assert.Equal(6, (await ReadAsync(second.RebuildingVersion!.Value, player, cancellationToken))!.Points);
     }
 
     // -----------------------------------------------------------------------

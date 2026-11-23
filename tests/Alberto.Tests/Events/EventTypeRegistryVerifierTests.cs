@@ -1,7 +1,6 @@
 using System.Text.Json.Serialization;
 using Alberto.Testing;
 using Alberto.Tests.SampleEvents;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests;
@@ -76,8 +75,7 @@ public class EventTypeRegistryVerifierTests
         var registry = Correct().Build();
         var transfer = new TransferMade("acc-1", "acc-2", 10m);
 
-        EventSerializer.FromRegistry(registry).ExtractTags(transfer)
-            .Should().Equal(EventSerializer.FromRegistry(EventTypeRegistry.CreateBuilder().Build()).ExtractTags(transfer));
+        Assert.Equal(EventSerializer.FromRegistry(EventTypeRegistry.CreateBuilder().Build()).ExtractTags(transfer), EventSerializer.FromRegistry(registry).ExtractTags(transfer));
     }
 
     [Fact]
@@ -87,10 +85,10 @@ public class EventTypeRegistryVerifierTests
             .Add("transfer-by-hand", Json.TransferMade, e => [new("from", e.FromAccount)], version: 4)
             .Build();
 
-        registry.TryGetById("transfer-by-hand", out var d).Should().BeTrue();
-        d!.Version.Should().Be(4);
-        EventSerializer.FromRegistry(registry).ExtractTags(new TransferMade("a", "b", 1m))
-            .Select(t => t.ToString()).Should().Equal("from:a", "_version:4");
+        Assert.True(registry.TryGetById("transfer-by-hand", out var d));
+        Assert.Equal(4, d!.Version);
+        Assert.Equal(["from:a", "_version:4"], EventSerializer.FromRegistry(registry).ExtractTags(new TransferMade("a", "b", 1m))
+            .Select(t => t.ToString()));
     }
 
     [Fact]
@@ -100,8 +98,8 @@ public class EventTypeRegistryVerifierTests
 
         var registry = EventTypeRegistry.CreateBuilder().Add(Json.TransferMade, untyped).Build();
 
-        registry.TryGetByType(typeof(TransferMade), out var d).Should().BeTrue();
-        d!.TagExtractor.Should().BeSameAs(untyped);
+        Assert.True(registry.TryGetByType(typeof(TransferMade), out var d));
+        Assert.Same(untyped, d!.TagExtractor);
     }
 
     [Fact]
@@ -114,10 +112,10 @@ public class EventTypeRegistryVerifierTests
             .Build();
 
         var serializer = EventSerializer.FromRegistry(registry);
-        serializer.ExtractTags(new TransferMade("a", "b", 1m))
-            .Select(t => t.ToString()).Should().Equal("_version:1");
-        serializer.ExtractTags(new ShipmentBooked(Guid.Empty, ShipmentPriority.Low, null, "dhl"))
-            .Select(t => t.ToString()).Should().Equal("_version:3");
+        Assert.Equal(["_version:1"], serializer.ExtractTags(new TransferMade("a", "b", 1m))
+            .Select(t => t.ToString()));
+        Assert.Equal(["_version:3"], serializer.ExtractTags(new ShipmentBooked(Guid.Empty, ShipmentPriority.Low, null, "dhl"))
+            .Select(t => t.ToString()));
     }
 
     // ---- verifier: agreeing registries ----------------------------------------------------
@@ -146,8 +144,8 @@ public class EventTypeRegistryVerifierTests
             .Build();
 
         var withoutSample = () => EventTypeRegistryVerifier.Verify(registry);
-        withoutSample.Should().Throw<SpecificationException>()
-            .WithMessage("*'verifier-customer-renamed'*cannot build a probe event*CustomerId*Pass a sample*");
+        var exception = Assert.ThrowsAny<SpecificationException>(withoutSample);
+        Assert.Matches("(?is)'verifier-customer-renamed'.*cannot build a probe event.*CustomerId.*Pass a sample", exception.Message);
 
         EventTypeRegistryVerifier.Verify(registry, new CustomerRenamed(new CustomerId("c-7"), "Ada"));
     }
@@ -173,9 +171,11 @@ public class EventTypeRegistryVerifierTests
 
         var act = () => EventTypeRegistryVerifier.Verify(registry);
 
-        act.Should().Throw<SpecificationException>()
-            .WithMessage("*'verifier-transfer'*declared by [Tag] but not extracted: from:from-probe-1, to:to-probe-2*" +
-                         "extracted but not declared by [Tag]: from:to-probe-2, to:from-probe-1*");
+        var exception = Assert.ThrowsAny<SpecificationException>(act);
+        Assert.Matches(
+            @"(?is)'verifier-transfer'.*declared by \[Tag\] but not extracted: from:from-probe-1, to:to-probe-2.*" +
+            @"extracted but not declared by \[Tag\]: from:to-probe-2, to:from-probe-1",
+            exception.Message);
     }
 
     [Fact]
@@ -187,8 +187,8 @@ public class EventTypeRegistryVerifierTests
 
         var act = () => EventTypeRegistryVerifier.Verify(registry, new ShipmentBooked(Guid.Empty, ShipmentPriority.High, 4, "dhl"));
 
-        act.Should().Throw<SpecificationException>()
-            .WithMessage("*tags disagree on the sample*not extracted: priority:High*not declared by [Tag]: carrier:dhl*");
+        var exception = Assert.ThrowsAny<SpecificationException>(act);
+        Assert.Matches("(?is)tags disagree on the sample.*not extracted: priority:High.*not declared by \\[Tag]: carrier:dhl", exception.Message);
     }
 
     [Fact]
@@ -200,7 +200,8 @@ public class EventTypeRegistryVerifierTests
 
         var act = () => EventTypeRegistryVerifier.Verify(registry);
 
-        act.Should().Throw<SpecificationException>().WithMessage("*not extracted: to:to-probe-2*");
+        var exception = Assert.ThrowsAny<SpecificationException>(act);
+        Assert.Contains("not extracted: to:to-probe-2", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -215,10 +216,10 @@ public class EventTypeRegistryVerifierTests
 
         var act = () => EventTypeRegistryVerifier.Verify(registry);
 
-        act.Should().Throw<SpecificationException>()
-            .Where(ex => ex.Message.Contains("registered at version 2, but [EventType] declares version 3")
-                         && ex.Message.Contains("UpcastingNotRequired = True, but [EventType] declares False")
-                         && ex.Message.Contains("registered as id 'verifier-transfer-v2', but [EventType] declares 'verifier-transfer'"));
+        var exception = Assert.ThrowsAny<SpecificationException>(act);
+        Assert.True(exception.Message.Contains("registered at version 2, but [EventType] declares version 3")
+                         && exception.Message.Contains("UpcastingNotRequired = True, but [EventType] declares False")
+                         && exception.Message.Contains("registered as id 'verifier-transfer-v2', but [EventType] declares 'verifier-transfer'"));
     }
 
     [Fact]
@@ -230,8 +231,8 @@ public class EventTypeRegistryVerifierTests
 
         var act = () => EventTypeRegistryVerifier.Verify(registry);
 
-        act.Should().Throw<SpecificationException>()
-            .WithMessage("*'verifier-shipment'*threw NullReferenceException on a probe event*Pass a sample*");
+        var exception = Assert.ThrowsAny<SpecificationException>(act);
+        Assert.Matches("(?is)'verifier-shipment'.*threw NullReferenceException on a probe event.*Pass a sample", exception.Message);
     }
 
     [Fact]
@@ -239,12 +240,12 @@ public class EventTypeRegistryVerifierTests
     {
         var registry = Correct().Build();
 
-        FluentActions.Invoking(() => EventTypeRegistryVerifier.Verify(registry, new CustomerRenamed(new CustomerId("c"), "n")))
-            .Should().Throw<SpecificationException>().WithMessage("*CustomerRenamed: a sample was given, but the registry does not register this type*");
+        var exception = Assert.ThrowsAny<SpecificationException>(() => EventTypeRegistryVerifier.Verify(registry, new CustomerRenamed(new CustomerId("c"), "n")));
+        Assert.Contains("CustomerRenamed: a sample was given, but the registry does not register this type", exception.Message, StringComparison.OrdinalIgnoreCase);
 
-        FluentActions.Invoking(() => EventTypeRegistryVerifier.Verify(registry,
-                new TransferMade("a", "b", 1m), new TransferMade("c", "d", 2m)))
-            .Should().Throw<ArgumentException>().WithMessage("*More than one sample*");
+        var exception2 = Assert.ThrowsAny<ArgumentException>(() => EventTypeRegistryVerifier.Verify(registry,
+                new TransferMade("a", "b", 1m), new TransferMade("c", "d", 2m)));
+        Assert.Contains("More than one sample", exception2.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -252,12 +253,12 @@ public class EventTypeRegistryVerifierTests
     {
         var registry = Correct().Build();
 
-        FluentActions.Invoking(() => EventTypeRegistryVerifier.Verify(null!))
-            .Should().Throw<ArgumentNullException>().WithParameterName("registry");
-        FluentActions.Invoking(() => EventTypeRegistryVerifier.Verify(registry, null!))
-            .Should().Throw<ArgumentNullException>().WithParameterName("samples");
-        FluentActions.Invoking(() => EventTypeRegistryVerifier.Verify(registry, [null!]))
-            .Should().Throw<ArgumentNullException>().WithParameterName("samples");
+        var exception = Assert.ThrowsAny<ArgumentNullException>(() => EventTypeRegistryVerifier.Verify(null!));
+        Assert.Equal("registry", exception.ParamName);
+        var exception2 = Assert.ThrowsAny<ArgumentNullException>(() => EventTypeRegistryVerifier.Verify(registry, null!));
+        Assert.Equal("samples", exception2.ParamName);
+        var exception3 = Assert.ThrowsAny<ArgumentNullException>(() => EventTypeRegistryVerifier.Verify(registry, [null!]));
+        Assert.Equal("samples", exception3.ParamName);
     }
 
     [Fact]
@@ -270,8 +271,8 @@ public class EventTypeRegistryVerifierTests
 
         var act = () => EventTypeRegistryVerifier.Verify(registry);
 
-        act.Should().Throw<SpecificationException>()
-            .WithMessage("*'verifier-shipment'*'verifier-transfer'*");
+        var exception = Assert.ThrowsAny<SpecificationException>(act);
+        Assert.Matches("(?is)'verifier-shipment'.*'verifier-transfer'", exception.Message);
     }
 
     [Fact]
@@ -283,8 +284,8 @@ public class EventTypeRegistryVerifierTests
 
         var act = () => EventTypeRegistryVerifier.Verify(registry);
 
-        act.Should().Throw<SpecificationException>()
-            .Where(ex => ex.Message.Split('\n').Length == 2 && !ex.Message.Contains("threw"));
+        var exception = Assert.ThrowsAny<SpecificationException>(act);
+        Assert.True(exception.Message.Split('\n').Length == 2 && !exception.Message.Contains("threw"));
     }
 
     [Fact]
@@ -308,16 +309,14 @@ public class EventTypeRegistryVerifierTests
 
         var act = () => EventTypeRegistryVerifier.Verify(registry);
 
-        act.Should().Throw<SpecificationException>()
-            .WithMessage("*'verifier-computed-tag'*tag property 'Kind' has no setter or compiler-generated backing field*Pass a sample*");
+        var exception = Assert.ThrowsAny<SpecificationException>(act);
+        Assert.Matches("(?is)'verifier-computed-tag'.*tag property 'Kind' has no setter or compiler-generated backing field.*Pass a sample", exception.Message);
     }
 
     [Fact]
     public void Builder_and_descriptor_reject_invalid_arguments()
     {
-        FluentActions.Invoking(() => EventTypeRegistry.CreateBuilder().Add((EventTypeDescriptor)null!))
-            .Should().Throw<ArgumentNullException>();
-        FluentActions.Invoking(() => new EventTypeDescriptor("x", 0, false, Json.TransferMade, _ => []))
-            .Should().Throw<ArgumentOutOfRangeException>();
+        Assert.ThrowsAny<ArgumentNullException>(() => EventTypeRegistry.CreateBuilder().Add((EventTypeDescriptor)null!));
+        Assert.ThrowsAny<ArgumentOutOfRangeException>(() => new EventTypeDescriptor("x", 0, false, Json.TransferMade, _ => []));
     }
 }
