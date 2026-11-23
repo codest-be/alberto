@@ -61,6 +61,7 @@ for the same document can run at the same moment, on two replicas. With `React<T
   The `On` overloads take `(h, e, ct)` or `(h, e, ctx, ct)` with a `ReactorContext`.
 - Register at least one `On`, and each event type once: both throw when the module is built.
 - Retries, dead-lettering, middleware and `StartFrom` apply as they do to any async reactor.
+- **One reactor is one failure domain.** The event types share one checkpoint, so a failing event of one type holds back the later events of every type of this reactor until it is retried successfully or dead-lettered. Two `ReactTo`s kept a poison event of one type from blocking the other.
 - **`MaxConcurrency` above 1 gives up the order.** Events of a batch then run in parallel,
   so use it only when the handlers do not depend on each other.
 - To move existing `ReactTo` reactors onto one `React`, start it where they stopped:
