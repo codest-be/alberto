@@ -7,3 +7,7 @@ Alberto.Subscriptions.ProcessorStart
 static Alberto.Subscriptions.ProcessorStart.Beginning.get -> Alberto.Subscriptions.ProcessorStart!
 static Alberto.Subscriptions.ProcessorStart.CheckpointOf(params string![]! processorIds) -> Alberto.Subscriptions.ProcessorStart!
 static Alberto.Subscriptions.ProcessorStart.Head.get -> Alberto.Subscriptions.ProcessorStart!
+Alberto.ReactorBuilder<THandler>
+Alberto.ReactorBuilder<THandler>.On<TEvent>(System.Func<THandler!, TEvent!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>! handler) -> Alberto.ReactorBuilder<THandler!>!
+Alberto.ReactorBuilder<THandler>.On<TEvent>(System.Func<THandler!, TEvent!, Alberto.Subscriptions.ReactorContext!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>! handler) -> Alberto.ReactorBuilder<THandler!>!
+static Alberto.AlbertoModuleBuilderExtensions.React<THandler>(this Alberto.AlbertoModuleBuilder! builder, string! processorId, System.Action<Alberto.ReactorBuilder<THandler!>!>! on, System.Func<Alberto.Subscriptions.ProcessorExecutionOptions!, Alberto.Subscriptions.ProcessorExecutionOptions!>? configure = null) -> Alberto.AlbertoModuleBuilder!

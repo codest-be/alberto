@@ -42,6 +42,31 @@ Both forms have an overload whose handler also takes a `ReactorContext`, carryin
     processorId: "order-notifications")
 ```
 
+### One reactor for several event types
+
+When one side effect is fed by several event types and the handlers must not race each other,
+use `React<T>` instead of two `ReactTo`s. It is one processor id, one checkpoint and one lease,
+and the events are handled in log order, like a projection:
+
+```csharp
+.React<ExtractActions>("documents-extract-actions", r => r
+    .On<DocumentSigned>((h, e, ct) => h.Run(e.DocumentId, ct))
+    .On<DocumentRevised>((h, e, ctx, ct) => h.Run(e.DocumentId, ct)))
+```
+
+Two `ReactTo`s are two processors with two leases, so a `DocumentSigned` and a `DocumentRevised`
+for the same document can run at the same moment, on two replicas. With `React<T>` they never do.
+
+- `THandler` is a class, registered as scoped for you and resolved from a fresh scope per event.
+  The `On` overloads take `(h, e, ct)` or `(h, e, ctx, ct)` with a `ReactorContext`.
+- Register at least one `On`, and each event type once: both throw when the module is built.
+- Retries, dead-lettering, middleware and `StartFrom` apply as they do to any async reactor.
+- **`MaxConcurrency` above 1 gives up the order.** Events of a batch then run in parallel,
+  so use it only when the handlers do not depend on each other.
+- To move existing `ReactTo` reactors onto one `React`, start it where they stopped:
+  `configure: o => o with { StartFrom = ProcessorStart.CheckpointOf("old-id-1", "old-id-2") }`.
+  See [Starting a new processor, renaming and merging](#starting-a-new-processor-renaming-and-merging).
+
 ### The processor id matters
 
 It is the checkpoint key. Two things follow:
