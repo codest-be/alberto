@@ -19,15 +19,27 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ## [0.16.0] - 2026-11-23
 
+Inline EF projections now run inside the append's transaction, so they are in log order and
+atomic with the events. New processors can start without replaying the log, and one reactor can
+handle several event types. No migrations.
+
+### Breaking
+
+For inline EF projections (`ProjectionMode.Inline`) on Postgres:
+
+- A projection that throws now rolls the append back. Before, the events were committed and the caller got the exception afterwards.
+- The projection's DbContext must be in the event store's database, and must not use `EnableRetryOnFailure` (EF refuses a retrying strategy inside a transaction it did not start). Either one throws on the first inline run, naming the fix: change the context, or use `ProjectionMode.Async`.
+- A hand-written `ITransactionalInlineProjection` that swallows a database error fails the append with `InvalidOperationException` rather than having it roll back silently.
+- Appends in one tenant are serialised while inline projections run, so keep inline projections small. The in-memory backend and backends without `ITransactionalEventStoreBackend` keep the after-commit path.
+
 ### Fixed
 
-- Inline projections lose an event when two appends for one document project out of order (#285)
+- Inline projections no longer lose an event when two appends for one document project out of order (#285), and a crash between the append and its inline projection no longer leaves the row behind, because there is no such window any more (#286)
 
-### Changed
+### Added
 
-- Repair inline projections after a crash with a per-document catch-up (#286)
-- One reactor for several event types, under one processor id and lease (#284)
-- Start a new processor at the head, or at another processor's checkpoint, instead of replaying the log (#283)
+- `ProcessorExecutionOptions.StartFrom`: `ProcessorStart.Head` skips the log, and `ProcessorStart.CheckpointOf(ids)` continues from the lowest of those processors' checkpoints, for a rename or merge. The old rows stay for rollback and count as claimed in the orphan check. Set in code only (#283)
+- `React<THandler>(r => r.On<A>().On<B>())`: one reactor for several event types, under one processor id and lease, in log order (#284)
 
 ---
 
