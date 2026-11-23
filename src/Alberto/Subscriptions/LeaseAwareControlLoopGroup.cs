@@ -161,6 +161,10 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         _runningLoops.TryRemove(processorId, out _);
     }
 
+    /// <summary>The loop for <paramref name="processorId"/> when this replica holds its lease, else null.</summary>
+    internal ControlLoop? HeldLoop(string processorId) =>
+        _runningLoops.TryGetValue(processorId, out var loop) ? loop : null;
+
     public long GetFenceToken(string processorId) =>
         _fenceTokens.TryGetValue(processorId, out var token) ? token : 0;
 
