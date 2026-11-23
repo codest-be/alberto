@@ -231,7 +231,8 @@ internal static class PostgresBackendHelpers
         List<IEventToPersist> eventsList,
         DcbQuery? dcbQuery,
         long? expectedPosition,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task>? inTransaction = null)
     {
         var useAllTagsFunction = dcbQuery?.RequiresAllTags == true;
         var useIntersect = dcbQuery?.IntersectsTypesAndTags == true;
@@ -247,7 +248,7 @@ internal static class PostgresBackendHelpers
         return await ExecuteAppendAsync(
             sql, connection, lockKey, tenantId,
             eventsList, dcbQuery, expectedPosition,
-            useAllTagsFunction, cancellationToken);
+            useAllTagsFunction, cancellationToken, inTransaction);
     }
 
     // ---------------------------------------------------------------------------
@@ -276,7 +277,8 @@ internal static class PostgresBackendHelpers
         DcbQuery? dcbQuery,
         long? expectedPosition,
         bool useAllTagsFunction,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task>? inTransaction)
     {
         // #1 Write-skew fix: serialize appends for this (schema[, tenant]) with a
         // transaction-scoped advisory lock so the DCB conflict-check inside the
@@ -290,7 +292,13 @@ internal static class PostgresBackendHelpers
         // COMMIT as separate round trips it was held across two network round trips, which
         // is what capped same-store append throughput (benchmarks/README.md, Concurrency).
         // This relies on Npgsql's default of no error barriers between batch commands.
-        await using var batch = new NpgsqlBatch(connection);
+        //
+        // With inTransaction the transaction is explicit instead, so the callback runs inside it with
+        // the lock still held; the lock is then held for the callback's time as well.
+        await using var transaction = inTransaction is null
+            ? null
+            : await connection.BeginTransactionAsync(cancellationToken);
+        await using var batch = new NpgsqlBatch(connection, transaction);
 
         var lockCmd = new NpgsqlBatchCommand(AppendLockSql);
         lockCmd.Parameters.AddWithValue("lock_key", lockKey);
@@ -338,9 +346,9 @@ internal static class PostgresBackendHelpers
             cmd.Parameters.AddWithValue("p_expected_position", DBNull.Value);
         }
 
+        var results = new List<IEventEnvelope>();
         try
         {
-            var results = new List<IEventEnvelope>();
             await using var reader = await batch.ExecuteReaderAsync(cancellationToken);
 
             // Skip the lock statement's result set; the append's rows follow it.
@@ -372,12 +380,38 @@ internal static class PostgresBackendHelpers
 
             if (results.Count != eventsList.Count)
                 throw RowCountMismatch(eventsList.Count);
-
-            return results;
         }
         catch (PostgresException ex) when (ex.SqlState == "P0001" && ex.Message.Contains("DCB conflict"))
         {
             throw ToConflictException(ex, dcbQuery, expectedPosition);
+        }
+
+        if (transaction is not null)
+        {
+            await inTransaction!(results, new AppendTransaction(connection, transaction), cancellationToken);
+            await ThrowIfTransactionAbortedAsync(connection, transaction, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        return results;
+    }
+
+    // Committing an aborted Postgres transaction rolls it back without an error, so a callback that
+    // swallowed a database error would make the append look durable. Any statement in an aborted
+    // transaction fails with 25P02, which surfaces it before the commit.
+    private static async Task ThrowIfTransactionAbortedAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, CancellationToken cancellationToken)
+    {
+        await using var probe = new NpgsqlCommand("SELECT 1", connection, transaction);
+        try
+        {
+            await probe.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.InFailedSqlTransaction)
+        {
+            throw new InvalidOperationException(
+                "An inline projection left the append transaction aborted, so the append was rolled back. " +
+                "A projection running in the append transaction must not swallow database errors.", ex);
         }
     }
 

@@ -138,12 +138,16 @@ public sealed class ControlledDbContextFactory : IDbContextFactory<EfTestDbConte
     /// </summary>
     public Func<Func<CancellationToken, Task<int>>, CancellationToken, Task<int>>? PermanentInterceptor { get; set; }
 
-    public ControlledDbContextFactory(string connectionString)
+    public ControlledDbContextFactory(string connectionString, bool retryOnFailure = true)
     {
         var builder = new DbContextOptionsBuilder<EfTestDbContext>();
         builder.UseNpgsql(
             connectionString,
-            npgsql => npgsql.EnableRetryOnFailure(5, TimeSpan.FromSeconds(3), null));
+            npgsql =>
+            {
+                if (retryOnFailure)
+                    npgsql.EnableRetryOnFailure(5, TimeSpan.FromSeconds(3), null);
+            });
         _options = builder.Options;
     }
 
@@ -224,14 +228,23 @@ public static class EfTestEnvelopes
 /// manage. Both this and the container it used to own are per test class — sharing happens
 /// at the container, not the database.
 /// </remarks>
-public sealed class EfProjectionTestFixture(PostgresCluster cluster)
-    : PostgresDatabaseFixture(cluster, PostgresTemplates.EntityFramework)
+public class EfProjectionTestFixture : PostgresDatabaseFixture
 {
+    public EfProjectionTestFixture(PostgresCluster cluster)
+        : base(cluster, PostgresTemplates.EntityFramework)
+    {
+    }
+
+    protected EfProjectionTestFixture(PostgresCluster cluster, PostgresTemplate template)
+        : base(cluster, template)
+    {
+    }
+
     /// <summary>
     /// Builds a <see cref="ControlledDbContextFactory"/> pointing at this class's database.
     /// Each test should create its own factory so that queued interceptors are independent.
     /// </summary>
-    public ControlledDbContextFactory CreateFactory() => new(ConnectionString);
+    public virtual ControlledDbContextFactory CreateFactory() => new(ConnectionString);
 
     /// <summary>
     /// Builds a standard <see cref="ProjectionDeclaration{CounterEntity}"/> that projects
@@ -292,4 +305,16 @@ public sealed class EfProjectionTestFixture(PostgresCluster cluster)
             npgsql => npgsql.EnableRetryOnFailure(5, TimeSpan.FromSeconds(3), null));
         return new EfTestDbContext(optionsBuilder.Options);
     }
+}
+
+/// <summary>
+/// <see cref="EfProjectionTestFixture"/> over a database that also carries the event store, for
+/// tests that append through a real <see cref="EventStore"/> and let its inline projections run.
+/// Its factories do not retry: an inline projection joins the append's transaction, which EF
+/// refuses to combine with a retrying execution strategy.
+/// </summary>
+public sealed class EfEventStoreFixture(PostgresCluster cluster)
+    : EfProjectionTestFixture(cluster, PostgresTemplates.EntityFrameworkThenSingleTenant)
+{
+    public override ControlledDbContextFactory CreateFactory() => new(ConnectionString, retryOnFailure: false);
 }

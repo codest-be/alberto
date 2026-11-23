@@ -92,11 +92,20 @@ internal sealed class PostgresTenantEventStoreBackend(
         => PostgresBackendHelpers.ReadAllOfTypesAsync(
             _schema, _dataSource, tenanted: true, eventTypes, afterPosition, limit, cancellationToken);
 
-    public async Task<IReadOnlyCollection<IEventEnvelope>> AppendForTenant(
+    public Task<IReadOnlyCollection<IEventEnvelope>> AppendForTenant(
         string tenantId,
         IEnumerable<IEventToPersist> events,
         DcbQuery? dcbQuery = null,
         long? expectedPosition = null,
+        CancellationToken cancellationToken = default)
+        => AppendForTenant(tenantId, events, dcbQuery, expectedPosition, inTransaction: null, cancellationToken);
+
+    public async Task<IReadOnlyCollection<IEventEnvelope>> AppendForTenant(
+        string tenantId,
+        IEnumerable<IEventToPersist> events,
+        DcbQuery? dcbQuery,
+        long? expectedPosition,
+        Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task>? inTransaction,
         CancellationToken cancellationToken = default)
     {
         var eventsList = events.ToList();
@@ -110,7 +119,7 @@ internal sealed class PostgresTenantEventStoreBackend(
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         return await PostgresBackendHelpers.AppendCoreAsync(
             connection, _schema, lockKey,
-            tenantId, eventsList, dcbQuery, expectedPosition, cancellationToken);
+            tenantId, eventsList, dcbQuery, expectedPosition, cancellationToken, inTransaction);
     }
 
     public async Task<long> GetLastPositionForTenant(

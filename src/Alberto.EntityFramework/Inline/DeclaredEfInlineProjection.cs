@@ -36,7 +36,7 @@ namespace Alberto.EntityFramework.Inline;
 /// </remarks>
 /// <typeparam name="TEntity">The projection entity type.</typeparam>
 /// <typeparam name="TDbContext">The EF DbContext containing the entity DbSet.</typeparam>
-internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineProjection
+internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : ITransactionalInlineProjection
     where TEntity : class, IProjectionEntity, new()
     where TDbContext : DbContext
 {
@@ -138,13 +138,69 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
         }
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Writes on the append's own connection and transaction, so the row commits or rolls back with
+    /// the events and is written in log order under the append lock. There is no concurrency retry
+    /// here: a failed statement aborts the transaction, so a failure throws, the append rolls back and
+    /// the caller retries the command. The DbContext must be in the events' database and must not use
+    /// a retrying execution strategy, which EF refuses to combine with a transaction it did not start.
+    /// </remarks>
+    public async Task ProcessInTransactionAsync(
+        IReadOnlyList<IEventEnvelope> events,
+        AppendTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        var batch = new ProjectionBatch<TEntity>(_declaration, events, serializer: null);
+        var documentKeys = batch.DocumentIds;
+
+        if (documentKeys.Count == 0)
+            return;
+
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        GuardJoinable(context, transaction);
+        context.Database.SetDbConnection(transaction.Connection);
+        await context.Database.UseTransactionAsync(transaction.Transaction, cancellationToken);
+        await ApplyAsync(context, batch, documentKeys, cancellationToken);
+    }
+
+    private void GuardJoinable(TDbContext context, AppendTransaction transaction)
+    {
+        var own = context.Database.GetDbConnection();
+        if (!string.Equals(own.DataSource, transaction.Connection.DataSource, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(own.Database, transaction.Connection.Database, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Inline EF projection '{_declaration.ProcessorId}' is not in the event store's database " +
+                $"('{own.DataSource}/{own.Database}' versus '{transaction.Connection.DataSource}/{transaction.Connection.Database}'), " +
+                "so it cannot be written in the append's transaction. Point its DbContext at the event store's " +
+                "database, or register the projection as ProjectionMode.Async.");
+        }
+
+        if (context.Database.CreateExecutionStrategy().RetriesOnFailure)
+        {
+            throw new InvalidOperationException(
+                $"Inline EF projection '{_declaration.ProcessorId}' runs in the append's transaction, which " +
+                "EF refuses to combine with a retrying execution strategy. Remove EnableRetryOnFailure from " +
+                "the DbContext this projection uses.");
+        }
+    }
+
     private async Task ProcessOnceAsync(
         ProjectionBatch<TEntity> batch,
         IReadOnlyList<string> documentKeys,
         CancellationToken cancellationToken)
     {
         await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        await ApplyAsync(context, batch, documentKeys, cancellationToken);
+    }
 
+    private async Task ApplyAsync(
+        TDbContext context,
+        ProjectionBatch<TEntity> batch,
+        IReadOnlyList<string> documentKeys,
+        CancellationToken cancellationToken)
+    {
         // Resolved once for the whole attempt, so a promotion landing mid-write cannot split
         // the load, the upserts and the deletes across two versions.
         var version = _rebuildVersion.Current;

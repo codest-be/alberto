@@ -500,6 +500,64 @@ public static class AlbertoModuleBuilderExtensions
     }
 
     /// <summary>
+    /// Registers one async reactor that handles several event types under a single processor id,
+    /// checkpoint and lease, in log order like a projection. Use it when one side effect is fed by
+    /// several event types that must not race each other.
+    /// </summary>
+    /// <typeparam name="THandler">The handler class. Registered as scoped if not already registered, and resolved from a fresh scope per event.</typeparam>
+    /// <param name="builder">The module builder.</param>
+    /// <param name="processorId">The processor id: the checkpoint key. Must be unique within the module.</param>
+    /// <param name="on">Registers the event types with <see cref="ReactorBuilder{THandler}.On{TEvent}(Func{THandler, TEvent, CancellationToken, Task})"/>. At least one, each type once.</param>
+    /// <param name="configure">
+    /// Optional per-processor execution settings. <c>MaxConcurrency</c> above 1 handles events of a
+    /// batch in parallel and gives up the log order.
+    /// </param>
+    /// <exception cref="InvalidOperationException">No event type is registered.</exception>
+    public static AlbertoModuleBuilder React<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] THandler>(
+        this AlbertoModuleBuilder builder,
+        string processorId,
+        Action<ReactorBuilder<THandler>> on,
+        Func<ProcessorExecutionOptions, ProcessorExecutionOptions>? configure = null)
+        where THandler : class
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(on);
+        ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
+        ValidateProcessorIdArg(processorId, builder.ModuleKey);
+
+        var reactorBuilder = new ReactorBuilder<THandler>();
+        on(reactorBuilder);
+        if (reactorBuilder.Handlers.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Reactor '{processorId}' handles no event types. Register at least one with On<TEvent>(...).");
+        }
+
+        var handlers = reactorBuilder.Handlers;
+
+        builder.Register(context => context.Services.TryAddScoped<THandler>());
+
+        var executionOptions = BuildProcessorExecutionOptions(ReactorMode.Async, configure);
+
+        builder.DeclareProcessor(new ProcessorDeclaration
+        {
+            ProcessorId = processorId,
+            Kind = ProcessorKind.Reactor,
+            Execution = executionOptions,
+            HandlerType = typeof(THandler),
+        });
+
+        RegisterAsyncProcessor(builder, (sp, mKey) => new MultiTypeReactor<THandler>(
+            processorId,
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            handlers,
+            executionOptions.MaxConcurrency,
+            sp.GetKeyedService<EventSerializer>(mKey)));
+
+        return builder;
+    }
+
+    /// <summary>
     /// Configures the async control loop. Called implicitly with defaults when omitted.
     /// </summary>
     /// <param name="builder">The module builder.</param>

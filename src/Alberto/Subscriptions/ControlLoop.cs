@@ -297,7 +297,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
             {
                 // Taken before the head is read, so any advance after that read wakes the wait.
                 var headAdvanced = _head.Advanced;
-                var checkpoint = await _checkpointStore.GetAsync(ProcessorId, cancellationToken) ?? 0L;
+                var checkpoint = await ReadCheckpointAsync(cancellationToken);
                 var head = _head.Current;
 
                 if (checkpoint >= head)
@@ -410,7 +410,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
     private async Task RunPipelinedAsync(CancellationToken cancellationToken)
     {
         var maxConcurrency = _executionOptions.MaxConcurrency;
-        var initialCheckpoint = await _checkpointStore.GetAsync(ProcessorId, cancellationToken) ?? 0L;
+        var initialCheckpoint = await ReadCheckpointAsync(cancellationToken);
         var watermark = new PositionWatermark(initialCheckpoint);
         // Not `using`: when the worker drain times out the abandoned workers still hold this
         // token, so disposal is deferred until they actually exit (see the finally block).
@@ -687,6 +687,59 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
             BackgroundSpans.Fail(activity, ex);
             throw;
         }
+    }
+
+    /// <summary>
+    /// The processor's checkpoint, seeded from <see cref="ProcessorExecutionOptions.StartFrom"/> when
+    /// it has none. Runs under the processor's lease, so the first replica to hold it decides the
+    /// start and every later one reads the saved checkpoint. A rebuild's shadow loop shares the
+    /// declared processor's options but must always replay, so it never seeds.
+    /// </summary>
+    private async Task<long> ReadCheckpointAsync(CancellationToken cancellationToken)
+    {
+        if (await _checkpointStore.GetAsync(ProcessorId, cancellationToken) is { } checkpoint)
+            return checkpoint;
+
+        var start = _executionOptions.StartFrom;
+        if (start.IsBeginning || Projections.RebuildableProjection.IsShadowProcessorId(ProcessorId))
+            return 0L;
+
+        var position = start.AtHead
+            ? await ReadHeadAsync(cancellationToken)
+            : await LowestCheckpointOfAsync(start.TakesOverFrom, cancellationToken);
+
+        await SaveCheckpointAsync(position, cancellationToken);
+        _logger?.LogInformation(
+            "ControlLoop {ProcessorId} had no checkpoint and starts at position {Position} ({Start})",
+            ProcessorId, position, start.AtHead ? "head" : $"checkpoint of {string.Join(", ", start.TakesOverFrom)}");
+        return position;
+    }
+
+    /// <summary>
+    /// The stable head, once the head has actually read the log: a cold head reports 0, and
+    /// seeding from that would replay everything.
+    /// </summary>
+    private async Task<long> ReadHeadAsync(CancellationToken cancellationToken)
+    {
+        while (!_head.HasRead)
+            await WaitForHeadAsync(_head.Advanced, cancellationToken);
+        return _head.Current;
+    }
+
+    private async Task<long> LowestCheckpointOfAsync(IReadOnlyList<string> processorIds, CancellationToken cancellationToken)
+    {
+        var lowest = long.MaxValue;
+        foreach (var id in processorIds)
+        {
+            var position = await _checkpointStore.GetAsync(id, cancellationToken);
+            if (position is null)
+                _logger?.LogWarning(
+                    "ControlLoop {ProcessorId} takes over from {OldProcessorId}, which has no checkpoint: " +
+                    "starting from position 0", ProcessorId, id);
+            lowest = Math.Min(lowest, position ?? 0L);
+        }
+
+        return lowest;
     }
 
     private async Task SaveCheckpointAsync(long position, CancellationToken cancellationToken)

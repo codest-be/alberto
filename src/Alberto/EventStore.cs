@@ -78,11 +78,34 @@ public sealed class EventStore : IEventStore, IEventStoreConfigurator
                     nameof(dcbQuery));
         }
 
-        var appended = await _backend.AppendAsync(
-            events,
-            dcbQuery,
-            expectedPosition,
-            cancellationToken);
+        var eventList = events.ToList();
+        var inTransaction = _backend is ITransactionalEventStoreBackend { SupportsAppendTransaction: true } transactional
+            ? transactional
+            : null;
+        var ranInTransaction = inTransaction is null
+            ? []
+            : _inlineProjections
+                .OfType<ITransactionalInlineProjection>()
+                .Where(p => eventList.Any(e => p.HandledEventTypes.Contains(e.EventType.Id)))
+                .ToHashSet();
+
+        var appended = ranInTransaction.Count == 0
+            ? await _backend.AppendAsync(eventList, dcbQuery, expectedPosition, cancellationToken)
+            : await inTransaction!.AppendAsync(
+                eventList,
+                dcbQuery,
+                expectedPosition,
+                async (inserted, transaction, token) =>
+                {
+                    foreach (var projection in ranInTransaction)
+                    {
+                        var relevant = RelevantTo(projection, inserted);
+                        if (relevant.Count > 0)
+                            await ProjectInlineAsync(
+                                projection, relevant.Count, () => projection.ProcessInTransactionAsync(relevant, transaction, token));
+                    }
+                },
+                cancellationToken);
 
         if (appended.Count == 0)
             return appended;
@@ -91,12 +114,14 @@ public sealed class EventStore : IEventStore, IEventStoreConfigurator
 
         foreach (var projection in _inlineProjections)
         {
-            var relevant = appendedList
-                .Where(e => projection.HandledEventTypes.Contains(e.EventType.Id))
-                .ToList();
+            if (projection is ITransactionalInlineProjection transactionalProjection
+                && ranInTransaction.Contains(transactionalProjection))
+                continue;
+
+            var relevant = RelevantTo(projection, appendedList);
 
             if (relevant.Count > 0)
-                await ProjectInlineAsync(projection, relevant, cancellationToken);
+                await ProjectInlineAsync(projection, relevant.Count, () => projection.ProcessAsync(relevant, cancellationToken));
         }
 
         foreach (var handler in _postAppendHandlers)
@@ -112,20 +137,23 @@ public sealed class EventStore : IEventStore, IEventStoreConfigurator
         return appended;
     }
 
+    private static List<IEventEnvelope> RelevantTo(IInlineProjection projection, IEnumerable<IEventEnvelope> events) =>
+        events.Where(e => projection.HandledEventTypes.Contains(e.EventType.Id)).ToList();
+
     /// <summary>
     /// Runs one inline projection under an <c>alberto.projection.inline</c> span. Not a root: it is
     /// part of the caller's own work and fails it if it throws, so it nests under whatever span
-    /// the caller has (a command's, typically), beside the <c>append</c> span that has already ended.
+    /// the caller has (a command's, typically). A transactional projection runs inside the
+    /// backend's <c>append</c> span; the others run beside it, after it has ended.
     /// </summary>
-    private static async Task ProjectInlineAsync(
-        IInlineProjection projection, List<IEventEnvelope> events, CancellationToken cancellationToken)
+    private static async Task ProjectInlineAsync(IInlineProjection projection, int eventCount, Func<Task> process)
     {
         using var activity = AlbertoMetrics.Source.StartActivity("alberto.projection.inline");
         activity?.SetTag("alberto.projection.type", projection.GetType().FullName);
-        activity?.SetTag("alberto.projection.events", events.Count);
+        activity?.SetTag("alberto.projection.events", eventCount);
         try
         {
-            await projection.ProcessAsync(events, cancellationToken);
+            await process();
         }
         catch (Exception ex)
         {
