@@ -15,6 +15,10 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ## [Unreleased]
 
+### Fixed
+
+- With leases on, a processor's dead-letter retries now run only on the replica that holds its lease, and between its live dispatches there, never beside one. Before, every replica claimed and ran them, so a retry could run beside a live event for the same processor. A replica that loses the lease leaves its claimed entries for the new holder once their claim lease expires. With leases off nothing changes (#290)
+
 ---
 
 ## [0.16.0] - 2026-11-23
