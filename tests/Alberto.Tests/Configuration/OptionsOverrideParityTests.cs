@@ -1,5 +1,6 @@
 using System.Reflection;
 using Alberto.Configuration;
+using Alberto.Subscriptions;
 using FluentAssertions;
 using Xunit;
 
@@ -28,6 +29,11 @@ public class OptionsOverrideParityTests
                 .Select(i => (Overrides: t, Options: i.GetGenericArguments()[0])))
             .ToList();
     }
+
+    private static readonly HashSet<string> CodeOnlyOptions =
+    [
+        $"{nameof(ProcessorExecutionOptions)}.{nameof(ProcessorExecutionOptions.StartFrom)}",
+    ];
 
     private static PropertyInfo[] PublicProperties(Type type) =>
         type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
@@ -64,7 +70,9 @@ public class OptionsOverrideParityTests
         foreach (var (overridesType, optionsType) in DiscoverPairs())
         {
             // Computed properties (no SetMethod) are not configuration knobs and have no mirror.
-            foreach (var prop in PublicProperties(optionsType).Where(p => p.SetMethod != null))
+            foreach (var prop in PublicProperties(optionsType)
+                         .Where(p => p.SetMethod != null)
+                         .Where(p => !CodeOnlyOptions.Contains($"{optionsType.Name}.{p.Name}")))
             {
                 var mirror = overridesType.GetProperty(prop.Name, BindingFlags.Public | BindingFlags.Instance);
 

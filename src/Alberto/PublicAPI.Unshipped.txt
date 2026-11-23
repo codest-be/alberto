@@ -1,1 +1,9 @@
 #nullable enable
+Alberto.Subscriptions.ProcessorExecutionOptions.StartFrom.get -> Alberto.Subscriptions.ProcessorStart!
+Alberto.Subscriptions.ProcessorExecutionOptions.StartFrom.init -> void
+Alberto.Subscriptions.ProcessorStart.AtHead.get -> bool
+Alberto.Subscriptions.ProcessorStart.TakesOverFrom.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Alberto.Subscriptions.ProcessorStart
+static Alberto.Subscriptions.ProcessorStart.Beginning.get -> Alberto.Subscriptions.ProcessorStart!
+static Alberto.Subscriptions.ProcessorStart.CheckpointOf(params string![]! processorIds) -> Alberto.Subscriptions.ProcessorStart!
+static Alberto.Subscriptions.ProcessorStart.Head.get -> Alberto.Subscriptions.ProcessorStart!

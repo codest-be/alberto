@@ -83,6 +83,30 @@ public class OrphanCheckpointTests
     }
 
     [Fact]
+    public async Task A_checkpoint_taken_over_by_a_declared_processor_is_claimed()
+    {
+        var definition = Definition(OrphanCheckpointPolicy.Strict) with
+        {
+            Processors =
+            [
+                new ProcessorDeclaration
+                {
+                    ProcessorId = "order-mails-v2",
+                    Kind = ProcessorKind.Reactor,
+                    Execution = ProcessorExecutionOptions.Default with
+                    {
+                        StartFrom = ProcessorStart.CheckpointOf("order-mails"),
+                    },
+                },
+            ],
+        };
+
+        var act = () => RunAsync(definition, new FakeInventory("order-mails-v2", "order-mails"));
+
+        await act.Should().NotThrowAsync("the old row is kept so a rolled-back deploy resumes where it stopped");
+    }
+
+    [Fact]
     public async Task Warn_does_not_fail_startup()
     {
         var act = () => RunAsync(

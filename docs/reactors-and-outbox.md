@@ -50,8 +50,49 @@ It is the checkpoint key. Two things follow:
   One reactor, one id.
 - **Change it and you get a brand-new processor starting at position 0**, which replays the entire
   log through your side effect. Renaming a reactor's id in a deployment is how people accidentally
-  send ten thousand emails. If you must rename one, set its checkpoint before it starts:
-  `ICheckpointStore.SaveAsync(newId, currentHead)`, then `ResetAsync` the old id.
+  send ten thousand emails. Say where a new id starts instead (next section).
+
+### Starting a new processor, renaming and merging
+
+`StartFrom` decides where a processor with **no checkpoint yet** starts. Once it has a checkpoint,
+the checkpoint wins and `StartFrom` is never read again.
+
+```csharp
+// A new reactor for future events only: none of the history.
+.ReactTo<OrderPlaced>(handler, "order-sms", configure: o => o with { StartFrom = ProcessorStart.Head })
+
+// A rename: carry on where the old id stopped, no gap, no repeat.
+.ReactTo<OrderPlaced>(handler, "order-mails-v2",
+    configure: o => o with { StartFrom = ProcessorStart.CheckpointOf("order-mails") })
+
+// A merge: two reactors become one, starting at the lower of the two.
+.ReactTo<OrderPlaced>(handler, "order-notifications",
+    configure: o => o with { StartFrom = ProcessorStart.CheckpointOf("order-mails", "order-sms") })
+```
+
+| `StartFrom` | Starts at | Use it for |
+|---|---|---|
+| `ProcessorStart.Beginning` (default) | Position 0, the whole log | Projections, and reactors that must see history |
+| `ProcessorStart.Head` | The head when it first starts | A new side effect that should only fire for new events |
+| `ProcessorStart.CheckpointOf(ids)` | The lowest checkpoint of `ids` | Renaming or merging processors |
+
+What to know:
+
+- **The replica that takes the lease decides.** The start is written as the new id's checkpoint
+  the first time it runs, so other replicas and later restarts read that checkpoint.
+- **A merge starts at the lowest**, so the processor that was further ahead sees a stretch of
+  events again. Reactors are at-least-once anyway; make sure the handler is idempotent.
+- **An old id with no checkpoint counts as 0** and logs a warning: a typo in the old id replays
+  the log. Check the warning on the first deploy.
+- **The old checkpoint rows stay.** Roll the deploy back and the old processor resumes where it
+  stopped. The ids named in `CheckpointOf` count as claimed, so the
+  [orphan check](operations.md) does not flag them. Remove them with `ResetAsync` once you no
+  longer need the rollback.
+- **During a rolling deploy both run.** Old replicas keep handling events under the old id while
+  new ones start from its checkpoint, so events in that window can be handled by both. Stop the
+  old processor first if a double side effect is not acceptable.
+- **Rebuilds always replay.** A projection rebuild ignores `StartFrom` and starts at 0.
+- `StartFrom` is set in code only; it is not bound from configuration.
 
 ### Async vs sync
 

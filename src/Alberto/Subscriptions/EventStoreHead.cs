@@ -69,6 +69,14 @@ public sealed class EventStoreHead : IHostedService
 
     public long Current => Volatile.Read(ref _current);
 
+    private volatile bool _hasRead;
+
+    /// <summary>
+    /// True once a refresh has completed, so <see cref="Current"/> is a reading of the log and not
+    /// the zero it starts at. A failed warm-up leaves it false until the loop's first good refresh.
+    /// </summary>
+    internal bool HasRead => _hasRead;
+
     /// <summary>
     /// Completes the next time <see cref="Current"/> advances. Take it <em>before</em> reading
     /// <see cref="Current"/>: an advance after that read then always completes the task in hand.
@@ -252,6 +260,7 @@ public sealed class EventStoreHead : IHostedService
             : _gapRetry == TimeSpan.Zero ? FirstGapRetry
             : _gapRetry * 2 < MaxGapRetry ? _gapRetry * 2 : MaxGapRetry;
         _holding = holding;
+        _hasRead = true;
         TrackStall(holding, headAdvanced: current != start);
         if (current != start)
             Interlocked.Exchange(ref _advanced, new(TaskCreationOptions.RunContinuationsAsynchronously)).TrySetResult();
