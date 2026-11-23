@@ -295,11 +295,17 @@ parameter's default is correct there.
 | Latency cost | None on the write path | Its write latency, added to every mutation |
 | Rebuildable | Yes | **No.** Inline projections register no state clearer |
 
-One thing "inline" does *not* mean: atomic. Inline projections run **after** the append transaction
-has committed, on their own connection. A projection that throws therefore fails the caller's
-`AppendAsync` even though the events are already durable. The caller sees an exception, the log
-sees a successful append. Design for that: an inline projection should be simple enough that it
-only fails when the database is down.
+Inline EF projections on Postgres are atomic with the append. The projection runs inside the append
+transaction, after the events are inserted and while the per-tenant append lock is held, so it sees
+events in log order and a projection that throws rolls the append back. This has costs:
+
+- The DbContext must point at the same database as the events. Otherwise the first append throws.
+- The DbContext must not use `EnableRetryOnFailure`: EF refuses a retrying strategy inside a transaction
+  it did not start. The append throws a clear error.
+- The append lock is held for as long as the projection runs, so keep it short.
+
+Backends that cannot share a transaction (the in-memory backend) run the projection after the append,
+as before. Post-append handlers and reactors always run after commit.
 
 Use `Inline` only for narrow per-user projections the caller will immediately re-query. Everything
 else should be `Async`; "the UI flickers" is better solved by returning the decision's own result
