@@ -247,6 +247,12 @@ internal static class ControlLoopRegistration
 
             var replicaId = options.Leases.EffectiveReplicaId;
 
+            // With leases on, a processor's retries run only where its lease is held, and between
+            // its live dispatches there.
+            var heldLoop = options.Leases.Enabled
+                ? ((LeaseAwareControlLoopGroup)sp.GetRequiredKeyedService<ILiveLoopSuspender>(moduleKey)).HeldLoop
+                : (Func<string, ControlLoop?>?)null;
+
             // Automatic retry needs an atomic claim-and-fence, which is the optional
             // IClaimableDeadLetterStore capability rather than part of every store's contract.
             // A store without it can still record and clear dead letters and can still be
@@ -287,7 +293,8 @@ internal static class ControlLoopRegistration
                     replicaId,
                     timeProvider: timeProvider,
                     drainTimeout: options.DrainTimeout,
-                    gate: gate))
+                    gate: gate,
+                    heldLoop: heldLoop))
                 .ToList();
 
             return new DeadLetterRetryLoopGroup(retryLoops, gate);

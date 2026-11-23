@@ -42,6 +42,12 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
     private CancellationTokenSource? _cts;
     private Task? _loop;
     private int _disposed;
+
+    /// <summary>
+    /// Held around each sequential dispatch, so work run through
+    /// <see cref="TryRunBetweenDispatchesAsync"/> never overlaps one.
+    /// </summary>
+    private readonly SemaphoreSlim _dispatchLock = new(1, 1);
     private bool _faultCleared;
 
     /// <summary>
@@ -197,6 +203,53 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
                 "re-delivered on the next start.",
                 ProcessorId, _drainTimeout);
         }
+
+        // Work run between dispatches was cancelled with the loop; wait for it to leave too, so a
+        // stopped loop (a lost or released lease) has nothing of this processor still running here.
+        try
+        {
+            if (await _dispatchLock.WaitAsync(_drainTimeout, cancellationToken))
+                _dispatchLock.Release();
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    /// <summary>
+    /// Runs <paramref name="work"/> for this processor while the loop runs, and never during one of
+    /// its sequential dispatches. Returns false, without running it or after cancelling it, when the
+    /// loop is not running or stops first. A pipelined loop (<see cref="ProcessorExecutionOptions.MaxConcurrency"/>
+    /// above 1) dispatches concurrently by design, so there the work only waits for other such work.
+    /// </summary>
+    internal async Task<bool> TryRunBetweenDispatchesAsync(
+        Func<CancellationToken, Task> work, CancellationToken cancellationToken)
+    {
+        var running = Volatile.Read(ref _cts);
+        if (running is null)
+            return false;
+
+        CancellationTokenSource linked;
+        try { linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, running.Token); }
+        catch (ObjectDisposedException) { return false; }
+
+        using (linked)
+        {
+            try { await _dispatchLock.WaitAsync(linked.Token); }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { return false; }
+
+            try
+            {
+                await work(linked.Token);
+                return true;
+            }
+            catch (OperationCanceledException) when (running.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                return false;
+            }
+            finally
+            {
+                _dispatchLock.Release();
+            }
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -337,20 +390,28 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
                         relevantEvents.Add(e);
                 }
 
+                await _dispatchLock.WaitAsync(cancellationToken);
                 inHandler = true;
-                if (ShouldUseBatchDispatch && relevantEvents.Count > 0)
+                try
                 {
-                    await DispatchBatchAsync(relevantEvents, cancellationToken);
-                }
-                else
-                {
-                    foreach (var evt in relevantEvents)
+                    if (ShouldUseBatchDispatch && relevantEvents.Count > 0)
                     {
-                        dispatching = evt;
-                        await DispatchAsync(evt, cancellationToken);
+                        await DispatchBatchAsync(relevantEvents, cancellationToken);
                     }
+                    else
+                    {
+                        foreach (var evt in relevantEvents)
+                        {
+                            dispatching = evt;
+                            await DispatchAsync(evt, cancellationToken);
+                        }
 
-                    dispatching = null;
+                        dispatching = null;
+                    }
+                }
+                finally
+                {
+                    _dispatchLock.Release();
                 }
 
                 inHandler = false;

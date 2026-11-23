@@ -28,6 +28,11 @@ namespace Alberto.DeadLetters;
 /// When set, the loop does not poll on its own: it claims only once the module's shared
 /// <see cref="DeadLetterDueGate"/> reports a due entry for its processor, then drains as usual.
 /// </param>
+/// <param name="heldLoop">
+/// With leases on: the processor's live loop when this replica holds its lease, else null. The
+/// loop then claims and dispatches only on the lease holder, between the live loop's dispatches.
+/// Null (leases off) claims and dispatches unconditionally.
+/// </param>
 internal sealed class DeadLetterRetryLoop(
     IEventProcessor processor,
     IClaimableDeadLetterStore deadLetterStore,
@@ -40,7 +45,8 @@ internal sealed class DeadLetterRetryLoop(
     IServiceScopeFactory? scopeFactory = null,
     TimeProvider? timeProvider = null,
     TimeSpan? drainTimeout = null,
-    DeadLetterDueGate? gate = null) : IHostedService, IAsyncDisposable
+    DeadLetterDueGate? gate = null,
+    Func<string, ControlLoop?>? heldLoop = null) : IHostedService, IAsyncDisposable
 {
     private readonly IEventProcessor _processor = processor ?? throw new ArgumentNullException(nameof(processor));
     private readonly IClaimableDeadLetterStore _deadLetterStore = deadLetterStore ?? throw new ArgumentNullException(nameof(deadLetterStore));
@@ -159,13 +165,14 @@ internal sealed class DeadLetterRetryLoop(
                 // (or we explicitly delete/release the row) no other worker will pick it up.
                 // Rows come back when an operator asked for them or their next_retry_at has
                 // arrived on the application clock (never the database's, so tests can drive it).
-                var retries = await _deadLetterStore.ClaimDueAsync(
+                IReadOnlyList<DeadLetterClaim> retries = [];
+                await BesideLiveLoopAsync(async token => retries = await _deadLetterStore.ClaimDueAsync(
                     _processor.ProcessorId,
                     _batchSize,
                     _claimLeaseDuration,
                     _claimedBy,
                     _timeProvider.GetUtcNow(),
-                    cancellationToken);
+                    token), cancellationToken);
 
                 foreach (var claim in retries)
                 {
@@ -181,7 +188,20 @@ internal sealed class DeadLetterRetryLoop(
                         // built-in RetryAndDeadLetter middleware swallows non-cancellation failures
                         // and dead-letters the event again on exhaustion, so a normal return here
                         // covers both "handler succeeded" and "handler failed again".
-                        var context = await DispatchWithTenantScopeAsync(envelope, entry, cancellationToken);
+                        ConsumeEventContext? context = null;
+                        if (!await BesideLiveLoopAsync(
+                                async token => context = await DispatchWithTenantScopeAsync(envelope, entry, token),
+                                cancellationToken))
+                        {
+                            // The lease moved on. The claims stay until they expire, so the new
+                            // holder does not run them while this replica might still be.
+                            _logger?.LogInformation(
+                                "DeadLetterRetryLoop for processor '{ProcessorId}' no longer holds its lease; " +
+                                "leaving {Count} claimed entries to expire",
+                                _processor.ProcessorId,
+                                retries.Count);
+                            break;
+                        }
 
                         if (context is not { DeadLettered: true })
                         {
@@ -314,6 +334,18 @@ internal sealed class DeadLetterRetryLoop(
                 idle = true;
             }
         }
+    }
+
+    private async Task<bool> BesideLiveLoopAsync(Func<CancellationToken, Task> work, CancellationToken cancellationToken)
+    {
+        if (heldLoop is null)
+        {
+            await work(cancellationToken);
+            return true;
+        }
+
+        return heldLoop(_processor.ProcessorId) is { } loop
+            && await loop.TryRunBetweenDispatchesAsync(work, cancellationToken);
     }
 
     // Without a gate, the per-processor poll it always was.
