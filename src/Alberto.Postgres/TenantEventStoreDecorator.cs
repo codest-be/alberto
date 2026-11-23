@@ -7,7 +7,7 @@ namespace Alberto.Postgres;
 /// Reads tenant ID from ITenantAccessor and delegates to the tenant-aware inner backend.
 /// Registered when .WithTenancy() is called on the module builder.
 /// </summary>
-internal sealed class TenantEventStoreDecorator : IEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
+internal sealed class TenantEventStoreDecorator : ITransactionalEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
 {
     private readonly PostgresTenantEventStoreBackend _inner;
     private readonly ITenantAccessor _tenantAccessor;
@@ -89,6 +89,17 @@ internal sealed class TenantEventStoreDecorator : IEventStoreBackend, IEventStor
         var tenantId = _tenantAccessor.TenantId;
         return _inner.AppendForTenant(tenantId, events, dcbQuery, expectedPosition, cancellationToken);
     }
+
+    public bool SupportsAppendTransaction => true;
+
+    public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+        IEnumerable<IEventToPersist> events,
+        DcbQuery? dcbQuery,
+        long? expectedPosition,
+        Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
+        CancellationToken cancellationToken = default)
+        => _inner.AppendForTenant(
+            _tenantAccessor.TenantId, events, dcbQuery, expectedPosition, inTransaction, cancellationToken);
 
     public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
         => _inner.GetLastPositionGlobal(cancellationToken);
