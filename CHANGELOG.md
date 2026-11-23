@@ -17,6 +17,20 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.16.0] - 2026-11-23
+
+### Fixed
+
+- Inline projections lose an event when two appends for one document project out of order (#285)
+
+### Changed
+
+- Repair inline projections after a crash with a per-document catch-up (#286)
+- One reactor for several event types, under one processor id and lease (#284)
+- Start a new processor at the head, or at another processor's checkpoint, instead of replaying the log (#283)
+
+---
+
 ## [0.15.2] - 2026-11-22
 
 ### Changed
@@ -1158,7 +1172,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.15.2...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/codest-be/alberto/compare/v0.15.2...v0.16.0
 [0.15.2]: https://github.com/codest-be/alberto/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/codest-be/alberto/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/codest-be/alberto/compare/v0.14.0...v0.15.0

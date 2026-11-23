@@ -25,6 +25,10 @@ Alberto.Append.AppendContext.ExpectedPosition.init -> void
 Alberto.Append.AppendContext.WithEvents(System.Collections.Generic.IReadOnlyList<Alberto.IEventToPersist!>! events) -> Alberto.Append.AppendContext!
 Alberto.Append.IAppendInterceptor
 Alberto.Append.IAppendInterceptor.OnAppendingAsync(Alberto.Append.AppendContext! context, System.Func<Alberto.Append.AppendContext!, System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!>! next, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
+Alberto.AppendTransaction
+Alberto.AppendTransaction.AppendTransaction(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction) -> void
+Alberto.AppendTransaction.Connection.get -> System.Data.Common.DbConnection!
+Alberto.AppendTransaction.Transaction.get -> System.Data.Common.DbTransaction!
 Alberto.Checkpoints.ICheckpointInventory
 Alberto.Checkpoints.ICheckpointInventory.CanEnumerate.get -> bool
 Alberto.Checkpoints.ICheckpointInventory.ListProcessorIdsAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
@@ -581,6 +585,9 @@ Alberto.IEvolve<TState, TEvent>.Apply(TState state, TEvent event) -> TState
 Alberto.IGeneratedEvolver<TState>
 Alberto.IGeneratedEvolver<TState>.EvolveTable() -> System.Collections.Generic.IReadOnlyList<(System.Type! EventType, System.Func<TState, object!, TState>! Apply)>!
 Alberto.IGeneratedEvolver<TState>.GeneratedFor.get -> System.Type!
+Alberto.ITransactionalEventStoreBackend
+Alberto.ITransactionalEventStoreBackend.AppendAsync(System.Collections.Generic.IEnumerable<Alberto.IEventToPersist!>! events, Alberto.DcbQuery? dcbQuery, long? expectedPosition, System.Func<System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>!, Alberto.AppendTransaction!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>! inTransaction, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
+Alberto.ITransactionalEventStoreBackend.SupportsAppendTransaction.get -> bool
 Alberto.Leases.IProcessorLease
 Alberto.Leases.IProcessorLease.ExpiresAt.get -> System.DateTimeOffset
 Alberto.Leases.IProcessorLease.FenceToken.get -> long
@@ -627,6 +634,8 @@ Alberto.Projections.IStateStore<TState>
 Alberto.Projections.IStateStore<TState>.ApplyChangesAsync(System.Collections.Generic.IReadOnlyDictionary<string!, TState>! upserts, System.Collections.Generic.IReadOnlyCollection<string!>! deletes, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Projections.IStateStore<TState>.ListRecentAsync(int limit = 20, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TState>!>!
 Alberto.Projections.IStateStore<TState>.LoadManyAsync(System.Collections.Generic.IEnumerable<string!>! documentIds, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, TState>!>!
+Alberto.Projections.ITransactionalInlineProjection
+Alberto.Projections.ITransactionalInlineProjection.ProcessInTransactionAsync(System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>! events, Alberto.AppendTransaction! transaction, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Projections.ProjectionCatchUp
 Alberto.Projections.ProjectionCatchUp.ProjectionCatchUp(Alberto.IEventStoreBackend! eventStore, Alberto.Checkpoints.ICheckpointStore! checkpoints, System.TimeSpan? defaultTimeout = null, System.TimeSpan? pollInterval = null) -> void
 Alberto.Projections.ProjectionCatchUp.WaitForProjectionAsync(string! processorId, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -741,6 +750,9 @@ Alberto.Projections.RebuildStatus.Completed = 3 -> Alberto.Projections.RebuildSt
 Alberto.Projections.RebuildStatus.Idle = 0 -> Alberto.Projections.RebuildStatus
 Alberto.Projections.RebuildStatus.Ready = 2 -> Alberto.Projections.RebuildStatus
 Alberto.Projections.RebuildStatus.Rebuilding = 1 -> Alberto.Projections.RebuildStatus
+Alberto.ReactorBuilder<THandler>
+Alberto.ReactorBuilder<THandler>.On<TEvent>(System.Func<THandler!, TEvent!, Alberto.Subscriptions.ReactorContext!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>! handler) -> Alberto.ReactorBuilder<THandler!>!
+Alberto.ReactorBuilder<THandler>.On<TEvent>(System.Func<THandler!, TEvent!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>! handler) -> Alberto.ReactorBuilder<THandler!>!
 Alberto.ReactorMode
 Alberto.ReactorMode.Async = 0 -> Alberto.ReactorMode
 Alberto.ReactorMode.Sync = 1 -> Alberto.ReactorMode
@@ -878,8 +890,13 @@ Alberto.Subscriptions.ProcessorExecutionOptions.Redelivery.get -> Alberto.Config
 Alberto.Subscriptions.ProcessorExecutionOptions.Redelivery.init -> void
 Alberto.Subscriptions.ProcessorExecutionOptions.Retry.get -> Alberto.Configuration.RetryOverrides?
 Alberto.Subscriptions.ProcessorExecutionOptions.Retry.init -> void
+Alberto.Subscriptions.ProcessorExecutionOptions.StartFrom.get -> Alberto.Subscriptions.ProcessorStart!
+Alberto.Subscriptions.ProcessorExecutionOptions.StartFrom.init -> void
 Alberto.Subscriptions.ProcessorExecutionOptions.TraceParenting.get -> Alberto.Subscriptions.TraceParenting
 Alberto.Subscriptions.ProcessorExecutionOptions.TraceParenting.init -> void
+Alberto.Subscriptions.ProcessorStart
+Alberto.Subscriptions.ProcessorStart.AtHead.get -> bool
+Alberto.Subscriptions.ProcessorStart.TakesOverFrom.get -> System.Collections.Generic.IReadOnlyList<string!>!
 Alberto.Subscriptions.ReactorContext
 Alberto.Subscriptions.ReactorContext.EventId.get -> System.Guid
 Alberto.Subscriptions.ReactorContext.EventId.init -> void
@@ -1154,6 +1171,7 @@ static Alberto.AlbertoModuleBuilderExtensions.AddBatchConsumeMiddleware(this Alb
 static Alberto.AlbertoModuleBuilderExtensions.AddConsumeMiddleware(this Alberto.AlbertoModuleBuilder! builder, System.Func<System.IServiceProvider!, Alberto.Subscriptions.ConsumeMiddleware!>! factory) -> Alberto.AlbertoModuleBuilder!
 static Alberto.AlbertoModuleBuilderExtensions.AddProjection<TState>(this Alberto.AlbertoModuleBuilder! builder, Alberto.Projections.ProjectionDeclaration<TState>! declaration, System.Func<Alberto.Projections.ProjectionStoreContext, System.Func<string?, Alberto.Projections.IStateStore<TState>!>!>! stateStoreFactory, string? projectionType = null) -> Alberto.AlbertoModuleBuilder!
 static Alberto.AlbertoModuleBuilderExtensions.AddUpcaster(this Alberto.AlbertoModuleBuilder! builder, Alberto.Upcasting.UpcasterDeclaration! declaration) -> Alberto.AlbertoModuleBuilder!
+static Alberto.AlbertoModuleBuilderExtensions.React<THandler>(this Alberto.AlbertoModuleBuilder! builder, string! processorId, System.Action<Alberto.ReactorBuilder<THandler!>!>! on, System.Func<Alberto.Subscriptions.ProcessorExecutionOptions!, Alberto.Subscriptions.ProcessorExecutionOptions!>? configure = null) -> Alberto.AlbertoModuleBuilder!
 static Alberto.AlbertoModuleBuilderExtensions.ReactTo<TEvent, THandler>(this Alberto.AlbertoModuleBuilder! builder, System.Func<THandler!, System.Func<TEvent!, Alberto.Subscriptions.ReactorContext!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>!>! methodSelector, string? processorId = null, Alberto.ReactorMode mode = Alberto.ReactorMode.Async, System.Func<Alberto.Subscriptions.ProcessorExecutionOptions!, Alberto.Subscriptions.ProcessorExecutionOptions!>? configure = null) -> Alberto.AlbertoModuleBuilder!
 static Alberto.AlbertoModuleBuilderExtensions.ReactTo<TEvent, THandler>(this Alberto.AlbertoModuleBuilder! builder, System.Func<THandler!, System.Func<TEvent!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>!>! methodSelector, string? processorId = null, Alberto.ReactorMode mode = Alberto.ReactorMode.Async, System.Func<Alberto.Subscriptions.ProcessorExecutionOptions!, Alberto.Subscriptions.ProcessorExecutionOptions!>? configure = null) -> Alberto.AlbertoModuleBuilder!
 static Alberto.AlbertoModuleBuilderExtensions.ReactTo<TEvent>(this Alberto.AlbertoModuleBuilder! builder, System.Func<System.IServiceProvider!, System.Func<TEvent!, Alberto.Subscriptions.ReactorContext!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>!>! handlerFactory, string! processorId, Alberto.ReactorMode mode = Alberto.ReactorMode.Async, System.Func<Alberto.Subscriptions.ProcessorExecutionOptions!, Alberto.Subscriptions.ProcessorExecutionOptions!>? configure = null) -> Alberto.AlbertoModuleBuilder!
@@ -1315,6 +1333,9 @@ static Alberto.Subscriptions.ConsumeMiddlewares.RetryAndDeadLetter(Alberto.Confi
 static Alberto.Subscriptions.ProcessorExecutionOptions.Default.get -> Alberto.Subscriptions.ProcessorExecutionOptions!
 static Alberto.Subscriptions.ProcessorExecutionOptions.operator !=(Alberto.Subscriptions.ProcessorExecutionOptions? left, Alberto.Subscriptions.ProcessorExecutionOptions? right) -> bool
 static Alberto.Subscriptions.ProcessorExecutionOptions.operator ==(Alberto.Subscriptions.ProcessorExecutionOptions? left, Alberto.Subscriptions.ProcessorExecutionOptions? right) -> bool
+static Alberto.Subscriptions.ProcessorStart.Beginning.get -> Alberto.Subscriptions.ProcessorStart!
+static Alberto.Subscriptions.ProcessorStart.CheckpointOf(params string![]! processorIds) -> Alberto.Subscriptions.ProcessorStart!
+static Alberto.Subscriptions.ProcessorStart.Head.get -> Alberto.Subscriptions.ProcessorStart!
 static Alberto.Subscriptions.ReactorContext.FromEnvelope(Alberto.IEventEnvelope! envelope) -> Alberto.Subscriptions.ReactorContext!
 static Alberto.Telemetry.AlbertoMetrics.RecordHeadStalled(string! moduleKey, double stalledSeconds) -> void
 static Alberto.Telemetry.AlbertoMetrics.RecordProcessorLag(string! processorId, string! module, long lag) -> void
