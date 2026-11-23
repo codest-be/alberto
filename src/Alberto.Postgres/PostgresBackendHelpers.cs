@@ -389,10 +389,30 @@ internal static class PostgresBackendHelpers
         if (transaction is not null)
         {
             await inTransaction!(results, new AppendTransaction(connection, transaction), cancellationToken);
+            await ThrowIfTransactionAbortedAsync(connection, transaction, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
 
         return results;
+    }
+
+    // Committing an aborted Postgres transaction rolls it back without an error, so a callback that
+    // swallowed a database error would make the append look durable. Any statement in an aborted
+    // transaction fails with 25P02, which surfaces it before the commit.
+    private static async Task ThrowIfTransactionAbortedAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, CancellationToken cancellationToken)
+    {
+        await using var probe = new NpgsqlCommand("SELECT 1", connection, transaction);
+        try
+        {
+            await probe.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.InFailedSqlTransaction)
+        {
+            throw new InvalidOperationException(
+                "An inline projection left the append transaction aborted, so the append was rolled back. " +
+                "A projection running in the append transaction must not swallow database errors.", ex);
+        }
     }
 
     private static InvalidOperationException RowCountMismatch(int sent) =>
