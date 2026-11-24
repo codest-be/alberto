@@ -15,6 +15,15 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ## [Unreleased]
 
+---
+
+## [0.16.1] - 2026-11-24
+
+### Changed
+
+- Committed events skipped by processors under concurrent multi-tenant appends (#294)
+- Dead-letter retries run beside the processor lease: retry only on the replica that holds it (#290)
+
 ### Fixed
 
 - With leases on, a processor's dead-letter retries now run only on the replica that holds its lease, and between its live dispatches there, never beside one. Before, every replica claimed and ran them, so a retry could run beside a live event for the same processor. A replica that loses the lease leaves its claimed entries for the new holder once their claim lease expires. With leases off nothing changes (#290)
@@ -1188,7 +1197,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.16.1...HEAD
+[0.16.1]: https://github.com/codest-be/alberto/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/codest-be/alberto/compare/v0.15.2...v0.16.0
 [0.15.2]: https://github.com/codest-be/alberto/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/codest-be/alberto/compare/v0.15.0...v0.15.1
