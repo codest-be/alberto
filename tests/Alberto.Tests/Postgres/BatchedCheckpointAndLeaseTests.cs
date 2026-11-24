@@ -140,7 +140,7 @@ public sealed class BatchedCheckpointAndLeaseTests(BatchedCheckpointFixture fixt
 
         var won = results.SelectMany(r => r.Select(l => l.ProcessorId)).ToList();
         Assert.Distinct(won);
-        Assert.Equivalent(new[] { ids }, won, strict: true);
+        Assert.Equivalent(ids, won, strict: true);
         Assert.Distinct(results.SelectMany(r => r).Select(l => l.FenceToken));
     }
 
