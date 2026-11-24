@@ -11,11 +11,6 @@ Alberto.EntityFramework.EfStateStore<TEntity, TDbContext>.DisposeAsync() -> Syst
 Alberto.EntityFramework.EfStateStore<TEntity, TDbContext>.EfStateStore(Microsoft.EntityFrameworkCore.IDbContextFactory<TDbContext!>! contextFactory, Alberto.Projections.ProjectionVersion rebuildVersion = default(Alberto.Projections.ProjectionVersion)) -> void
 Alberto.EntityFramework.EfStateStore<TEntity, TDbContext>.ListRecentAsync(int limit = 20, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TEntity!>!>!
 Alberto.EntityFramework.EfStateStore<TEntity, TDbContext>.LoadManyAsync(System.Collections.Generic.IEnumerable<string!>! documentIds, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, TEntity!>!>!
-Alberto.EntityFramework.Inline.InlineProjectionExhaustedException
-Alberto.EntityFramework.Inline.InlineProjectionExhaustedException.Attempts.get -> int
-Alberto.EntityFramework.Inline.InlineProjectionExhaustedException.DocumentCount.get -> int
-Alberto.EntityFramework.Inline.InlineProjectionExhaustedException.InlineProjectionExhaustedException(string! processorId, int attempts, int documentCount, System.Exception? innerException = null) -> void
-Alberto.EntityFramework.Inline.InlineProjectionExhaustedException.ProcessorId.get -> string!
 Alberto.EntityFramework.ProjectionMode
 Alberto.EntityFramework.ProjectionMode.Async = 0 -> Alberto.EntityFramework.ProjectionMode
 Alberto.EntityFramework.ProjectionMode.Inline = 1 -> Alberto.EntityFramework.ProjectionMode

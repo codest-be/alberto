@@ -17,6 +17,31 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.17.0] - 2026-11-24
+
+Inline projections now mean one thing on every backend: they run inside the append, in log order,
+and a throw aborts the append. Upgrade carefully if you wrote your own inline projection or event
+store backend, or caught `InlineProjectionExhaustedException`. No migrations.
+
+### Breaking changes
+
+- Every inline projection now runs inside the append, under the backend's append lock, before the events become visible, in log order. A throw aborts the append: no events are stored and no position is consumed. There is no post-commit inline path any more; work that must happen after commit belongs in an `IPostAppendHandler` or a reactor (#301)
+  - `IInlineProjection` has one method, `ProcessAsync(events, AppendTransaction transaction, ct)`. Replace `ProcessAsync(events, ct)`, and fold any `ITransactionalInlineProjection.ProcessInTransactionAsync` into it. `ITransactionalInlineProjection` is gone.
+  - `IEventStoreBackend` now requires `AppendAsync(events, dcbQuery, expectedPosition, inTransaction, ct)`: run `inTransaction` under your append lock before the events become visible, and discard the append if it throws. `ITransactionalEventStoreBackend` and `SupportsAppendTransaction` are gone.
+  - `AppendTransaction.Connection` and `Transaction` are nullable. `AppendTransaction.None` (both null) means the backend has no database transaction, which is what the in-memory backend hands over; write on your own connection then.
+  - Inline EF projections no longer retry and `InlineProjectionExhaustedException` is gone. A write conflict fails the append and the caller retries the command; catch the original exception from `AppendAsync`.
+- The in-memory backend now runs inline projections before it publishes the events, so tests on `AlbertoTestHarness` see Postgres semantics: log order across concurrent appends, and a throwing projection fails the append and leaves no events. Appends to one in-memory backend wait for an in-flight inline step, and an inline step that appends to the same in-memory backend waits until its token is cancelled. Reads and the head are never blocked. Writes a projection already saved on its own context are not rolled back when the append aborts (#300)
+
+### Fixed
+
+- An inline EF projection of a document with an owned collection threw `InvalidOperationException` ("The value of shadow key property ... is unknown") on any update or delete of an existing document. Inline and async EF projections now write with one recipe: tracked load by document and rebuild version, then copy values and owned navigations, with deletes winning (#299)
+
+### Documentation
+
+- `docs/projections.md`, `concepts.md`, `operations.md` and `migrating-to-1.0.md` describe the single in-append inline contract (#297)
+
+---
+
 ## [0.16.1] - 2026-11-24
 
 Two fixes for processors on Postgres. Upgrade if you append from several tenants at once or run
@@ -1196,7 +1221,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.16.1...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/codest-be/alberto/compare/v0.16.1...v0.17.0
 [0.16.1]: https://github.com/codest-be/alberto/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/codest-be/alberto/compare/v0.15.2...v0.16.0
 [0.15.2]: https://github.com/codest-be/alberto/compare/v0.15.1...v0.15.2
