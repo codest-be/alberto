@@ -17,6 +17,30 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.17.0] - 2026-11-24
+
+### Breaking changes
+
+- Inline projections always run inside the append (#301)
+- In-memory backend runs transactional inline projections in log order, before events are visible (#300)
+
+### Added
+
+- Inline projections always run inside the append (#301)
+- In-memory backend runs transactional inline projections in log order, before events are visible (#300)
+
+### Fixed
+
+- Inline EF projection fails updating or deleting a document with an owned collection (#299)
+
+### Documentation
+
+- Document that a plain IInlineProjection runs after commit, unordered (#297)
+
+> The migration steps for each breaking change are in the description of the pull request that made it. Fold them into the entries above before merging this release.
+
+---
+
 ## [0.16.1] - 2026-11-24
 
 Two fixes for processors on Postgres. Upgrade if you append from several tenants at once or run
@@ -1196,7 +1220,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.16.1...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/codest-be/alberto/compare/v0.16.1...v0.17.0
 [0.16.1]: https://github.com/codest-be/alberto/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/codest-be/alberto/compare/v0.15.2...v0.16.0
 [0.15.2]: https://github.com/codest-be/alberto/compare/v0.15.1...v0.15.2
