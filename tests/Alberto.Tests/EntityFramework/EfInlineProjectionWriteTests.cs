@@ -16,7 +16,7 @@ namespace Alberto.Tests.EntityFramework;
 /// to avoid needing full concurrency setup in the DB.
 /// </summary>
 [Trait("Category", "Integration")]
-public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture)
+public sealed class EfInlineProjectionWriteTests(EfProjectionTestFixture fixture)
     : IClassFixture<EfProjectionTestFixture>
 {
     // -----------------------------------------------------------------------

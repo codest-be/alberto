@@ -14,7 +14,8 @@ namespace Alberto.EntityFramework.Inline;
 /// Idempotency is enforced through <see cref="IProjectionEntity.LastProcessedPosition"/>:
 /// events with a global position less than or equal to the stored position are skipped.
 /// This makes it safe for the same projection to also be processed by an async path during
-/// a migration window — the row whose position is highest wins.
+/// a migration window — the row whose position is highest wins. A write conflict with that async
+/// writer is not retried: it fails the append, and the caller retries the command.
 /// <para>
 /// Rebuild versions: every read is filtered by <see cref="IProjectionEntity.RebuildVersion"/>
 /// and every write stamps it, exactly as <c>EfStateStore</c> does. This matters precisely
