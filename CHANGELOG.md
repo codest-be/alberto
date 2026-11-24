@@ -17,6 +17,16 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.18.0] - 2026-11-24
+
+### Changed
+
+- EfInlineProjectionOrderingTests: 3s hang guard flakes under coverage (#304)
+- Backend specification: cover the in-append AppendAsync overload (#303)
+- Remove FluentAssertions from the test projects (#292)
+
+---
+
 ## [0.17.0] - 2026-11-24
 
 Inline projections now mean one thing on every backend: they run inside the append, in log order,
@@ -1221,7 +1231,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/codest-be/alberto/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/codest-be/alberto/compare/v0.16.1...v0.17.0
 [0.16.1]: https://github.com/codest-be/alberto/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/codest-be/alberto/compare/v0.15.2...v0.16.0
