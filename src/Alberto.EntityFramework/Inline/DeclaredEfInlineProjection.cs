@@ -205,49 +205,22 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : ITransac
         // the load, the upserts and the deletes across two versions.
         var version = _rebuildVersion.Current;
 
-        // Load existing rows untracked: the projection rebuilds the entity by `with`-ing the
-        // loaded state, producing a new instance that we then Update/Add. If the original
-        // instance were tracked, Update would throw an identity-map conflict on the same key.
-        // The version predicate is what keeps this a one-row-per-document query while a
-        // shadow rebuild of the same entity is in flight.
-        var existing = await context.Set<TEntity>()
-            .IgnoreQueryFilters([ProjectionQueryFilters.ActiveVersion])
-            .AsNoTracking()
-            .Where(e => documentKeys.Contains(e.DocumentId) && e.RebuildVersion == version)
-            .ToDictionaryAsync(e => e.DocumentId, cancellationToken);
+        var outcome = await EfProjectionWriter.LoadFoldSaveAsync<TEntity>(
+            context,
+            version,
+            documentKeys,
+            existing =>
+            {
+                var changes = batch.Fold(existing);
+                return (changes.Upserts, changes.Deletes);
+            },
+            cancellationToken);
 
-        var changes = batch.Fold(existing);
-        var pending = changes.Upserts;
-        var deletes = changes.Deletes;
-
-        if (pending.Count == 0 && deletes.Count == 0)
-            return;
-
-        var now = DateTimeOffset.UtcNow;
-
-        foreach (var docId in deletes)
+        if (outcome is { Saved: false, NothingToWrite: false })
         {
-            if (existing.TryGetValue(docId, out var toDelete))
-                context.Set<TEntity>().Remove(toDelete);
+            context.ChangeTracker.Clear();
+            await EfProjectionWriter.WriteAsync(context, version, outcome.Upserts, outcome.Deletes, cancellationToken);
         }
-
-        foreach (var (docId, entity) in pending)
-        {
-            ProjectionEntityStamp.DocumentId(entity, docId);
-            // Stamped rather than left to the column default. A loaded row already carries the
-            // right version, but a declaration that returns a fresh instance leaves it at the
-            // CLR default, and relying on the store default to rewrite that only works while
-            // the live version happens to be 1.
-            ProjectionEntityStamp.RebuildVersion(entity, version);
-            ProjectionEntityStamp.UpdatedAt(entity, now);
-
-            if (existing.ContainsKey(docId))
-                context.Set<TEntity>().Update(entity);
-            else
-                context.Set<TEntity>().Add(entity);
-        }
-
-        await context.SaveChangesAsync(cancellationToken);
     }
 
     private static bool IsRetryableConflict(Exception ex) => ex switch

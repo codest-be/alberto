@@ -52,6 +52,34 @@ public class ActiveCounterEntity : IProjectionEntity
     public int Counter { get; set; }
 }
 
+/// <summary>
+/// Entity with an owned type and an owned collection, for the projection tests that must see
+/// the owned rows follow the document through updates and deletes.
+/// </summary>
+public class ShelfEntity : IProjectionEntity
+{
+    public string DocumentId { get; set; } = string.Empty;
+    public DateTimeOffset UpdatedAt { get; set; }
+    public long LastProcessedPosition { get; set; }
+    public uint Version { get; set; }
+    public int RebuildVersion { get; set; } = 1;
+    public string Label { get; set; } = string.Empty;
+    public ShelfAddress Address { get; set; } = new();
+    public List<ShelfItem> Items { get; set; } = [];
+}
+
+public class ShelfAddress
+{
+    public string Street { get; set; } = string.Empty;
+    public string City { get; set; } = string.Empty;
+}
+
+public class ShelfItem
+{
+    public string Sku { get; set; } = string.Empty;
+    public int Quantity { get; set; }
+}
+
 // ---------------------------------------------------------------------------
 // Test DbContext with injectable save interception
 // ---------------------------------------------------------------------------
@@ -83,8 +111,18 @@ public sealed class EfTestDbContext : DbContext
 
     public DbSet<ActiveCounterEntity> ActiveCounters => Set<ActiveCounterEntity>();
 
+    public DbSet<ShelfEntity> Shelves => Set<ShelfEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.ProjectionEntity<ShelfEntity>(entity =>
+        {
+            entity.ToTable("ef_test_shelves");
+            entity.Property(e => e.DocumentId).HasMaxLength(256);
+            entity.OwnsOne(e => e.Address);
+            entity.OwnsMany(e => e.Items, items => items.ToTable("ef_test_shelf_items"));
+        });
+
         // ProjectionEntity applies the (DocumentId, RebuildVersion) key that EfStateStore's
         // version filtering assumes, so these tests exercise the same model configuration
         // consumers are told to use.
