@@ -64,6 +64,7 @@ public sealed class ExtensionPointContractTests
 
             [typeof(IEventStoreBackend)] =
             [
+                "Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(IEnumerable<IEventToPersist>, DcbQuery, Nullable<Int64>, Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task>, CancellationToken)",
                 "Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(IReadOnlySet<String>, Int64, Int32, CancellationToken)",
             ],
 

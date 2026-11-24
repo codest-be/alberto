@@ -18,16 +18,13 @@ internal sealed class InterceptingEventStoreBackend(
     IEventStoreBackend inner,
     IAppendInterceptorPipeline pipeline,
     string? dbSystem = null)
-    : ITransactionalEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
+    : IEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
 {
     private readonly IEventStoreBackend _inner = inner ?? throw new ArgumentNullException(nameof(inner));
     private readonly IAppendInterceptorPipeline _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
     private readonly IEventStoreHeadBackend _innerHead = inner as IEventStoreHeadBackend
         ?? throw new ArgumentException(
             "Inner backend must implement IEventStoreHeadBackend", nameof(inner));
-
-    /// <inheritdoc />
-    public bool SupportsAppendTransaction => _inner is ITransactionalEventStoreBackend { SupportsAppendTransaction: true };
 
     /// <inheritdoc />
     public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
@@ -65,7 +62,7 @@ internal sealed class InterceptingEventStoreBackend(
             ctx => inTransaction is null
                 ? _inner.AppendAsync(
                     StampTraceContext(ctx.Events), ctx.DcbQuery, ctx.ExpectedPosition, cancellationToken)
-                : ((ITransactionalEventStoreBackend)_inner).AppendAsync(
+                : _inner.AppendAsync(
                     StampTraceContext(ctx.Events), ctx.DcbQuery, ctx.ExpectedPosition, inTransaction, cancellationToken),
             cancellationToken);
     }

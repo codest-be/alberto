@@ -20,7 +20,7 @@ namespace Alberto.InMemory;
 /// </para>
 /// </remarks>
 internal sealed class InMemoryEventStoreBackend(TimeProvider timeProvider)
-    : ITransactionalEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
+    : IEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
 {
     private readonly object _lock = new();
 
@@ -265,8 +265,6 @@ internal sealed class InMemoryEventStoreBackend(TimeProvider timeProvider)
             return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>(
                 EventsAfter(afterPosition).Where(e => eventTypes.Contains(e.EventType.Id)).Take(limit).ToList<IEventEnvelope>());
     }
-
-    public bool SupportsAppendTransaction => true;
 
     public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
         IEnumerable<IEventToPersist> events,

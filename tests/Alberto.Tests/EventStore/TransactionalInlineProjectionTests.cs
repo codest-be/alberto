@@ -7,17 +7,6 @@ namespace Alberto.Tests;
 public sealed class TransactionalInlineProjectionTests
 {
     [Fact]
-    public async Task AppendAsync_OnABackendWithoutAppendTransactions_RunsTheProjectionAfterTheAppend()
-    {
-        var projection = new TransactionalProjection("handled");
-        var store = new EventStore(new PlainBackend(), [projection]);
-
-        await store.AppendAsync([Event("handled")], cancellationToken: TestContext.Current.CancellationToken);
-
-        Assert.Equal(["after-commit"], projection.Calls);
-    }
-
-    [Fact]
     public async Task AppendAsync_OnATransactionalBackend_RunsTheProjectionInsideTheAppendAndNotAgain()
     {
         var projection = new TransactionalProjection("handled");
@@ -83,11 +72,9 @@ public sealed class TransactionalInlineProjectionTests
         }
     }
 
-    private sealed class TransactionalBackend(List<string> calls) : ITransactionalEventStoreBackend
+    private sealed class TransactionalBackend(List<string> calls) : IEventStoreBackend
     {
         private readonly InMemoryEventStoreBackend _inner = new();
-
-        public bool SupportsAppendTransaction => true;
 
         public async Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
             IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery = null, long? expectedPosition = null,
@@ -109,19 +96,6 @@ public sealed class TransactionalInlineProjectionTests
             return appended;
         }
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(DcbQuery query, long afterPosition, int limit, CancellationToken cancellationToken = default) => _inner.ReadAsync(query, afterPosition, limit, cancellationToken);
-        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(long afterPosition, int limit, CancellationToken cancellationToken = default) => _inner.ReadAllAsync(afterPosition, limit, cancellationToken);
-        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(IReadOnlySet<string> eventTypes, long afterPosition, int limit, CancellationToken cancellationToken = default) => _inner.ReadAllOfTypesAsync(eventTypes, afterPosition, limit, cancellationToken);
-        public IAsyncEnumerable<IEventEnvelope> StreamAsync(DcbQuery query, long afterPosition = 0, CancellationToken cancellationToken = default) => _inner.StreamAsync(query, afterPosition, cancellationToken);
-        public IAsyncEnumerable<IEventEnvelope> StreamAllAsync(long afterPosition = 0, CancellationToken cancellationToken = default) => _inner.StreamAllAsync(afterPosition, cancellationToken);
-        public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default) => _inner.GetLastPositionAsync(cancellationToken);
-    }
-
-    private sealed class PlainBackend : IEventStoreBackend
-    {
-        private readonly InMemoryEventStoreBackend _inner = new();
-
-        public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery = null, long? expectedPosition = null, CancellationToken cancellationToken = default) => _inner.AppendAsync(events, dcbQuery, expectedPosition, cancellationToken);
         public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(DcbQuery query, long afterPosition, int limit, CancellationToken cancellationToken = default) => _inner.ReadAsync(query, afterPosition, limit, cancellationToken);
         public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(long afterPosition, int limit, CancellationToken cancellationToken = default) => _inner.ReadAllAsync(afterPosition, limit, cancellationToken);
         public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(IReadOnlySet<string> eventTypes, long afterPosition, int limit, CancellationToken cancellationToken = default) => _inner.ReadAllOfTypesAsync(eventTypes, afterPosition, limit, cancellationToken);

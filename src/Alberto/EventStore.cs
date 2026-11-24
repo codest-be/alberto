@@ -79,19 +79,14 @@ public sealed class EventStore : IEventStore, IEventStoreConfigurator
         }
 
         var eventList = events.ToList();
-        var inTransaction = _backend is ITransactionalEventStoreBackend { SupportsAppendTransaction: true } transactional
-            ? transactional
-            : null;
-        var ranInTransaction = inTransaction is null
-            ? []
-            : _inlineProjections
-                .OfType<ITransactionalInlineProjection>()
-                .Where(p => eventList.Any(e => p.HandledEventTypes.Contains(e.EventType.Id)))
-                .ToHashSet();
+        var ranInTransaction = _inlineProjections
+            .OfType<ITransactionalInlineProjection>()
+            .Where(p => eventList.Any(e => p.HandledEventTypes.Contains(e.EventType.Id)))
+            .ToHashSet();
 
         var appended = ranInTransaction.Count == 0
             ? await _backend.AppendAsync(eventList, dcbQuery, expectedPosition, cancellationToken)
-            : await inTransaction!.AppendAsync(
+            : await _backend.AppendAsync(
                 eventList,
                 dcbQuery,
                 expectedPosition,

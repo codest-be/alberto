@@ -279,6 +279,12 @@ public sealed class IdleProcessorCostTests
             DcbQuery? dcbQuery = null, long? expectedPosition = null, CancellationToken cancellationToken = default)
             => Inner.AppendAsync(events, dcbQuery, expectedPosition, cancellationToken);
 
+        public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+            IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery, long? expectedPosition,
+            Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
+            CancellationToken cancellationToken = default)
+            => Inner.AppendAsync(events, dcbQuery, expectedPosition, inTransaction, cancellationToken);
+
         public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(DcbQuery query, long afterPosition, int limit,
             CancellationToken cancellationToken = default) => Inner.ReadAsync(query, afterPosition, limit, cancellationToken);
 

@@ -112,6 +112,12 @@ public sealed class ControlLoopSequentialMutationTests
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException("Not used by ControlLoop.");
 
+        public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+            IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery, long? expectedPosition,
+            Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
         public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException("Not used by ControlLoop.");
     }

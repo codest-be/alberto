@@ -163,6 +163,12 @@ public class ShardRoutingTests
             return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
         }
 
+        public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+            IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery, long? expectedPosition,
+            Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
+            CancellationToken cancellationToken = default)
+            => AppendAsync(events, dcbQuery, expectedPosition, cancellationToken);
+
         public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
             DcbQuery query, long afterPosition, int limit, CancellationToken cancellationToken = default)
         {

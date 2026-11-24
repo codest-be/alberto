@@ -167,7 +167,6 @@ public sealed class InMemoryAppendTransactionTests
         var projection = new RecordingProjection();
         var store = new EventStore(decorator, [projection]);
 
-        Assert.True(decorator.SupportsAppendTransaction);
         await store.AppendAsync([Event("handled", "tenant-event")], cancellationToken: Ct);
 
         Assert.Equal(["tenant-event"], projection.Seen);

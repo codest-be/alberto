@@ -41,6 +41,12 @@ public sealed class CountingBackend : IEventStoreBackend, IEventStoreHeadBackend
         return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
     }
 
+    public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+        IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery, long? expectedPosition,
+        Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
+        CancellationToken cancellationToken = default)
+        => AppendAsync(events, dcbQuery, expectedPosition, cancellationToken);
+
     public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default) => Task.FromResult(0L);
 
     public Task<IReadOnlyList<long>> GetPositionsAsync(

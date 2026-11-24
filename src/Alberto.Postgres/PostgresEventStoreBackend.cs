@@ -19,7 +19,7 @@ internal sealed class PostgresEventStoreBackend(
     TimeProvider? timeProvider = null,
     string? schema = null,
     bool enableStableHeadBarrier = true)
-    : ITransactionalEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
+    : IEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
 {
     private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
     // _timeProvider is retained for future use and to preserve the constructor surface.
@@ -92,8 +92,6 @@ internal sealed class PostgresEventStoreBackend(
         CancellationToken cancellationToken = default)
         => PostgresBackendHelpers.ReadAllOfTypesAsync(
             _schema, _dataSource, tenanted: false, eventTypes, afterPosition, limit, cancellationToken);
-
-    public bool SupportsAppendTransaction => true;
 
     public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
         IEnumerable<IEventToPersist> events,
