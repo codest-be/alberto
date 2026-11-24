@@ -13,9 +13,8 @@ namespace Alberto.Subscriptions;
 /// costs one implementation instead of two.
 /// </summary>
 /// <remarks>
-/// The method returns the last <see cref="Exception"/> on exhaustion so the
-/// caller can apply its own tail behaviour — dead-letter for single events,
-/// or the batch-splitting rethrow for multi-event batches.
+/// <see cref="ExecuteAsync"/> returns the last <see cref="Exception"/> on exhaustion;
+/// <see cref="ExecuteAndDeadLetterAsync"/> adds the halt / dead-letter tail both middlewares share.
 /// </remarks>
 internal static class RetryAndDeadLetterCore
 {
@@ -80,6 +79,73 @@ internal static class RetryAndDeadLetterCore
         }
 
         return lastError; // exhausted or permanent — caller handles tail
+    }
+
+    /// <summary>
+    /// The whole failure path of a retrying middleware: the retry loop, then, on failure, either
+    /// the halt (a projection stays on its event) or the dead letter. Returns <see langword="null"/>
+    /// when the dispatch succeeded or the processor halted and then recovered, and otherwise
+    /// whether the dead-letter entry was stored (false also when none was written).
+    /// </summary>
+    /// <param name="context">The middleware context for the current dispatch.</param>
+    /// <param name="envelope">The event a halt reports and a dead letter records: the only one, or a batch's first.</param>
+    /// <param name="priorRedeliveries">Redeliveries the event's dead-letter row already had; null for a batch.</param>
+    /// <param name="rethrowFailure">
+    /// Rethrow the failure instead of halting or dead-lettering, so the control loop can bisect a
+    /// multi-event batch to isolate the poison event.
+    /// </param>
+    /// <param name="retryMetricCount">See <see cref="ExecuteAsync"/>.</param>
+    /// <param name="haltObserver">Told when the processor halts and resumes.</param>
+    /// <param name="policy">The processor's policy; null for custom wiring, which dead-letters.</param>
+    /// <param name="effectiveRetry">The retry options in force: the policy's, else the middleware's.</param>
+    /// <param name="classifier">Determines whether a given exception is transient or permanent.</param>
+    /// <param name="deadLetterStore">Store for exhausted events. Null disables dead-lettering.</param>
+    /// <param name="next">The rest of the chain.</param>
+    /// <param name="instruments">The container's instruments.</param>
+    /// <param name="clock">Clock for backoff, <c>FailedAt</c> and the redelivery plan.</param>
+    /// <param name="logger">Logger used to surface dead-letter write failures. Null disables logging.</param>
+    internal static async Task<bool?> ExecuteAndDeadLetterAsync(
+        IMiddlewareContext context,
+        IEventEnvelope envelope,
+        int? priorRedeliveries,
+        bool rethrowFailure,
+        int retryMetricCount,
+        IHaltObserver? haltObserver,
+        ProcessorPolicy? policy,
+        RetryOptions effectiveRetry,
+        IErrorClassifier classifier,
+        IDeadLetterStore? deadLetterStore,
+        Func<Task> next,
+        AlbertoInstruments instruments,
+        TimeProvider clock,
+        ILogger? logger)
+    {
+        var lastError = await ExecuteAsync(context, effectiveRetry, classifier, next, retryMetricCount, instruments, clock);
+        if (lastError is null)
+            return null; // success
+
+        if (rethrowFailure)
+            throw lastError;
+
+        // A projection never dead-letters or skips: it stays on this event until it works.
+        if (policy is { HaltsOnFailure: true })
+        {
+            await HaltAsync(context, haltObserver, envelope.GlobalPosition, lastError, policy.Halt, next, clock, logger, instruments);
+            return null;
+        }
+
+        // Exhausted retries or permanent error — dead-letter this event.
+        instruments.DeadLetters.Add(1, ProcessorTags.ForModule(context.ProcessorId, context.ModuleKey));
+
+        if (!effectiveRetry.DeadLetterOnMaxRetries || deadLetterStore is null)
+            return false;
+
+        var now = clock.GetUtcNow();
+        var (nextRetryAt, redeliveryCount) = PlanRedelivery(policy, classifier, lastError, priorRedeliveries, now);
+        var entry = DeadLetterEntryFactory.Create(
+            context.ProcessorId, envelope, lastError, context.Attempt, now, nextRetryAt, redeliveryCount);
+
+        return await StoreDeadLetterAsync(deadLetterStore, entry, logger, context.CancellationToken, clock);
     }
 
     /// <summary>
@@ -216,9 +282,10 @@ internal static class RetryAndDeadLetterCore
     /// restart would have stored.
     /// </para>
     /// <para>
-    /// Both the single-event and batch middlewares route through here, because the reasoning
-    /// above does not depend on which one is dispatching, and a fix applied to one of them is
-    /// how this became a defect on the other.
+    /// The single-event and batch middlewares both reach here through
+    /// <see cref="ExecuteAndDeadLetterAsync"/>, because the reasoning above does not depend on
+    /// which one is dispatching, and a fix applied to one of them is how this became a defect
+    /// on the other.
     /// </para>
     /// </remarks>
     internal static async Task<bool> StoreDeadLetterAsync(

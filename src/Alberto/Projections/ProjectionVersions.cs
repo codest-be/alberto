@@ -42,6 +42,12 @@ public sealed class ProjectionVersions : IAsyncDisposable
     private readonly Task _refreshLoop;
 
     /// <summary>
+    /// <see cref="Environment.TickCount64"/> at the last successful refresh. Starts far enough
+    /// in the past that the loop refreshes immediately.
+    /// </summary>
+    private long _lastRefreshed = long.MinValue / 2;
+
+    /// <summary>
     /// Creates a version source and starts refreshing it.
     /// </summary>
     /// <param name="store">The rebuild state machine to read from.</param>
@@ -135,18 +141,32 @@ public sealed class ProjectionVersions : IAsyncDisposable
         var live = states.Select(s => s.ProcessorId).ToHashSet();
         foreach (var processorId in _cache.Keys.Where(k => !live.Contains(k)))
             _cache.TryRemove(processorId, out _);
+
+        Volatile.Write(ref _lastRefreshed, Environment.TickCount64);
     }
 
+    /// <summary>
+    /// Refreshes one interval after the last successful refresh, whoever made it. The rebuild
+    /// coordinator refreshes on every tick of its own; counting those here, rather than running
+    /// a timer of its own beside them, is what keeps the module at one read of the rebuild state
+    /// per interval while still bounding staleness by one interval.
+    /// </summary>
     private async Task RefreshLoopAsync(TimeSpan interval)
     {
-        using var timer = new PeriodicTimer(interval);
-
         while (!_stopping.IsCancellationRequested)
         {
             try
             {
+                var dueInMs = Volatile.Read(ref _lastRefreshed) + (long)interval.TotalMilliseconds
+                              - Environment.TickCount64;
+
+                if (dueInMs > 0)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(dueInMs), _stopping.Token);
+                    continue;
+                }
+
                 await RefreshAsync(_stopping.Token);
-                await timer.WaitForNextTickAsync(_stopping.Token);
             }
             catch (OperationCanceledException) when (_stopping.IsCancellationRequested)
             {
@@ -160,7 +180,7 @@ public sealed class ProjectionVersions : IAsyncDisposable
                 // permanently freeze every projection's version.
                 try
                 {
-                    await timer.WaitForNextTickAsync(_stopping.Token);
+                    await Task.Delay(interval, _stopping.Token);
                 }
                 catch (OperationCanceledException)
                 {

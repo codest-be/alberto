@@ -81,6 +81,12 @@ public sealed record ProcessorExecutionOptions
     /// </summary>
     public RedeliveryOverrides? Redelivery { get; init; }
 
+    /// <summary>
+    /// Where the processor starts when it has no checkpoint yet. Defaults to
+    /// <see cref="ProcessorStart.Beginning"/>: the whole log is replayed.
+    /// </summary>
+    public ProcessorStart StartFrom { get; init; } = ProcessorStart.Beginning;
+
     /// <summary>Default execution settings used when no explicit settings are declared.</summary>
     public static ProcessorExecutionOptions Default { get; } =
         new() { BatchingMode = ProcessorBatchingMode.Required };

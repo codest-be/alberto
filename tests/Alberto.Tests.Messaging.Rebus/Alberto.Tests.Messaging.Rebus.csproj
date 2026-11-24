@@ -30,7 +30,6 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
             <PrivateAssets>all</PrivateAssets>
         </PackageReference>
-        <PackageReference Include="FluentAssertions" />
         <PackageReference Include="Testcontainers.PostgreSql" />
         <!-- Rebus adapter recipe: not shipped in any packable project; lives here as a
              copy-paste recipe for Alberto consumers who want a Rebus-backed transport. -->

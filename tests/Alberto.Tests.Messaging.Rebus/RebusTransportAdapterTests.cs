@@ -4,7 +4,6 @@ using Alberto.Messaging;
 using Alberto.Messaging.Postgres;
 using Alberto.Postgres;
 using Alberto.TestInfrastructure;
-using FluentAssertions;
 using Npgsql;
 using Rebus.Activation;
 using Rebus.Bus;
@@ -90,14 +89,14 @@ public sealed class RebusTransportAdapterTests : IAsyncLifetime
         await DeliverAsync(new RebusTransport(bus), entry, cancellationToken);
 
         var message = await received.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
-        message.MessageType.Should().Be("order.placed");
-        message.Version.Should().Be("1");
+        Assert.Equal("order.placed", message.MessageType);
+        Assert.Equal("1", message.Version);
         AssertOrderPayload(message.Payload, "order-42");
 
         // Metadata survives as Rebus headers, forwarded via the optionalHeaders parameter.
-        correlationId.Should().Be("corr-123");
+        Assert.Equal("corr-123", correlationId);
 
-        (await ReadOutboxStatusAsync(entry.Id, cancellationToken)).Should().Be("delivered");
+        Assert.Equal("delivered", (await ReadOutboxStatusAsync(entry.Id, cancellationToken)));
     }
 
     /// <summary>
@@ -130,10 +129,10 @@ public sealed class RebusTransportAdapterTests : IAsyncLifetime
         await DeliverAsync(new RebusTransport(bus), entry, cancellationToken);
 
         var message = await received.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
-        message.MessageType.Should().Be("order.cancelled");
+        Assert.Equal("order.cancelled", message.MessageType);
         AssertOrderPayload(message.Payload, "order-99");
 
-        (await ReadOutboxStatusAsync(entry.Id, cancellationToken)).Should().Be("delivered");
+        Assert.Equal("delivered", (await ReadOutboxStatusAsync(entry.Id, cancellationToken)));
     }
 
     /// <summary>
@@ -166,8 +165,8 @@ public sealed class RebusTransportAdapterTests : IAsyncLifetime
         await DeliverAsync(new RebusTransport(bus), entry, cancellationToken);
 
         var message = await received.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
-        message.MessageType.Should().Be("order.shipped");
-        message.Version.Should().Be("1");
+        Assert.Equal("order.shipped", message.MessageType);
+        Assert.Equal("1", message.Version);
         AssertOrderPayload(message.Payload, "order-7");
     }
 
@@ -195,7 +194,7 @@ public sealed class RebusTransportAdapterTests : IAsyncLifetime
             destination: unconsumed);
 
         await DeliverAsync(new RebusTransport(bus), entry, cancellationToken);
-        (await ReadOutboxStatusAsync(entry.Id, cancellationToken)).Should().Be("delivered");
+        Assert.Equal("delivered", (await ReadOutboxStatusAsync(entry.Id, cancellationToken)));
 
         await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
@@ -310,9 +309,9 @@ public sealed class RebusTransportAdapterTests : IAsyncLifetime
     private static void AssertOrderPayload(string payload, string expectedOrderId)
     {
         using var doc = JsonDocument.Parse(payload);
-        doc.RootElement.ValueKind.Should().Be(JsonValueKind.Object,
-            because: "the payload must stay a JSON object, not become a double-encoded string");
-        doc.RootElement.GetProperty("orderId").GetString().Should().Be(expectedOrderId);
+        // the payload must stay a JSON object, not become a double-encoded string
+        Assert.Equal(JsonValueKind.Object, doc.RootElement.ValueKind);
+        Assert.Equal(expectedOrderId, doc.RootElement.GetProperty("orderId").GetString());
     }
 
     /// <summary>

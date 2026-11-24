@@ -2,7 +2,6 @@ using Alberto.InMemory;
 using Alberto.Leases;
 using Alberto.Postgres;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -27,32 +26,32 @@ public sealed class FairShareLeaseTests
 
         await using var a = Group(leases, "a");
         await a.StartAsync(CancellationToken.None);
-        Holders(leases).Should().Equal(Enumerable.Repeat("a", 6));
+        Assert.Equal(Enumerable.Repeat("a", 6), Holders(leases));
 
         // B is present but finds every processor held.
         await using var b = Group(leases, "b");
         await b.StartAsync(CancellationToken.None);
-        Holders(leases).Should().Equal(Enumerable.Repeat("a", 6));
-        (await leases.CountLiveReplicasAsync(Consumer, CancellationToken.None)).Should().Be(2);
+        Assert.Equal(Enumerable.Repeat("a", 6), Holders(leases));
+        Assert.Equal(2, await leases.CountLiveReplicasAsync(Consumer, CancellationToken.None));
 
         // A's renewal keeps its share and releases the rest.
         _clock.Advance(TimeSpan.FromSeconds(20));
         await a.RenewOnceAsync();
         await b.RenewOnceAsync();
         _clock.Advance(TimeSpan.FromSeconds(11));
-        Holders(leases).Should().Equal("a", "a", "a", null, null, null);
+        Assert.Equal(["a", "a", "a", null, null, null], Holders(leases));
 
         // A scan does not take back what the renewal shed.
         await a.ScanOnceAsync();
         await b.ScanOnceAsync();
-        Holders(leases).Should().Equal("a", "a", "a", "b", "b", "b");
+        Assert.Equal(["a", "a", "a", "b", "b", "b"], Holders(leases));
 
         // B stops renewing (crashed). Once its leases and its presence expire, A's share is all six.
         _clock.Advance(TimeSpan.FromSeconds(20));
         await a.RenewOnceAsync();
         _clock.Advance(TimeSpan.FromSeconds(11));
         await a.ScanOnceAsync();
-        Holders(leases).Should().Equal(Enumerable.Repeat("a", 6));
+        Assert.Equal(Enumerable.Repeat("a", 6), Holders(leases));
     }
 
     [Fact]
@@ -69,9 +68,9 @@ public sealed class FairShareLeaseTests
         await leases.TryAcquireAsync(Consumer, "alberto:replica:b", "b");
         await a.RenewOnceAsync();
 
-        tokenAtFlush.Should().BeGreaterThan(0);
-        a.GetFenceToken("p5").Should().Be(0);
-        a.GetFenceToken("p0").Should().BeGreaterThan(0);
+        Assert.True(tokenAtFlush > 0);
+        Assert.Equal(0, a.GetFenceToken("p5"));
+        Assert.True(a.GetFenceToken("p0") > 0);
     }
 
     [Fact]
@@ -84,10 +83,10 @@ public sealed class FairShareLeaseTests
         await b.StartAsync(CancellationToken.None);
 
         await a.RenewOnceAsync();
-        Holders(leases).Should().Equal("a", "a", "a", null, null, null);
+        Assert.Equal(["a", "a", "a", null, null, null], Holders(leases));
 
         await b.ScanOnceAsync();
-        Holders(leases).Should().Equal("a", "a", "a", "b", "b", "b");
+        Assert.Equal(["a", "a", "a", "b", "b", "b"], Holders(leases));
     }
 
     [Fact]
@@ -101,7 +100,7 @@ public sealed class FairShareLeaseTests
 
         await a.StartAsync(CancellationToken.None);
 
-        forgotten.Should().Equal(Processors);
+        Assert.Equal(Processors, forgotten);
     }
 
     [Fact]
@@ -118,7 +117,7 @@ public sealed class FairShareLeaseTests
 
         await a.RenewOnceAsync();
 
-        leases.GetActiveLease(Consumer, "p5")?.ReplicaId.Should().Be("b");
+        Assert.Equal("b", leases.GetActiveLease(Consumer, "p5")?.ReplicaId);
     }
 
     [Fact]
@@ -131,8 +130,8 @@ public sealed class FairShareLeaseTests
 
         await a.RenewOnceAsync();
 
-        Holders(leases).Should().Equal(Enumerable.Repeat("a", 6));
-        a.GetFenceToken("p5").Should().Be(0);
+        Assert.Equal(Enumerable.Repeat("a", 6), Holders(leases));
+        Assert.Equal(0, a.GetFenceToken("p5"));
     }
 
     [Fact]
@@ -141,7 +140,8 @@ public sealed class FairShareLeaseTests
         var act = () => new LeaseAwareControlLoopGroup(
             [], new RenewAllOnly(), Consumer, "a", rebalance: true);
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*Rebalance*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        Assert.Contains("Rebalance", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     private string?[] Holders(InMemoryProcessorLeaseManager leases) =>
@@ -159,7 +159,7 @@ public sealed class FairShareLeaseTests
     {
         var backend = new InMemoryEventStoreBackend();
         return new ControlLoop(new StubProcessor(processorId), new EventStoreHead(backend, TimeSpan.FromMilliseconds(50)),
-            backend, new InMemoryCheckpointStore(),
+            backend, new InMemoryFencedCheckpointStore(),
             pollingInterval: TimeSpan.FromMilliseconds(50), batchSize: 1,
             executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Disabled },
             drainTimeout: TimeSpan.FromMilliseconds(200));
@@ -205,7 +205,7 @@ public sealed class FairShareLeasePostgresTests(SingleTenantPostgresFixture fixt
 
         await using var a = FairShareLeaseTests.Group(leases, _consumer, "a");
         await a.StartAsync(ct);
-        (await HeldAsync(ct)).Should().BeEquivalentTo(new Dictionary<string, long> { ["a"] = 6 });
+        Assert.Equivalent(new Dictionary<string, long> { ["a"] = 6 }, (await HeldAsync(ct)), strict: true);
 
         var b = FairShareLeaseTests.Group(leases, _consumer, "b");
         try
@@ -244,7 +244,7 @@ public sealed class FairShareLeasePostgresTests(SingleTenantPostgresFixture fixt
         Dictionary<string, long> held;
         while (!done(held = await HeldAsync(ct)) && DateTime.UtcNow < deadline)
             await Task.Delay(50, ct);
-        done(held).Should().BeTrue($"held was {string.Join(", ", held.Select(h => $"{h.Key}={h.Value}"))}");
+        Assert.True(done(held), $"held was {string.Join(", ", held.Select(h => $"{h.Key}={h.Value}"))}");
     }
 
     private async Task<Dictionary<string, long>> HeldAsync(CancellationToken ct)

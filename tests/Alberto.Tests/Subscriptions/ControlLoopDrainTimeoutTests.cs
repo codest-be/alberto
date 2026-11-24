@@ -68,7 +68,7 @@ public sealed class ControlLoopDrainTimeoutTests
     /// race the loop's own progress.
     /// </summary>
     private static async Task WaitForCheckpointAsync(
-        InMemoryCheckpointStore checkpoints, string processorId, long expected, CancellationToken cancellationToken)
+        InMemoryFencedCheckpointStore checkpoints, string processorId, long expected, CancellationToken cancellationToken)
     {
         var deadline = Stopwatch.StartNew();
         while (deadline.Elapsed < TimeSpan.FromSeconds(10))
@@ -198,7 +198,7 @@ public sealed class ControlLoopDrainTimeoutTests
     public async Task Sequential_StopAsync_ReturnsWithinDrainTimeout_WhenHandlerIgnoresCancellation()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync(
             [CreateEvent("stuck")],
@@ -260,7 +260,7 @@ public sealed class ControlLoopDrainTimeoutTests
     public async Task Sequential_AbandonedHandler_DoesNotAdvanceCheckpoint()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync(
             [CreateEvent("stuck")],
@@ -325,7 +325,7 @@ public sealed class ControlLoopDrainTimeoutTests
     public async Task Pipelined_StuckWorker_IsAbandonedAndCheckpointStaysBehindIt()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         // Appended in two phases so the test never races the loop's own progress: phase one is
         // drained to a confirmed checkpoint of 1 before the stuck event even exists.
@@ -411,7 +411,7 @@ public sealed class ControlLoopDrainTimeoutTests
     public async Task DisposeAsync_AfterAbandonedDrain_DoesNotThrowAndIsIdempotent()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync([CreateEvent("stuck")],
             cancellationToken: TestContext.Current.CancellationToken);

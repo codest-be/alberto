@@ -1,6 +1,6 @@
+using System.Text.RegularExpressions;
 using Alberto.EntityFramework;
 using Alberto.InMemory;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -25,7 +25,7 @@ public class EfProjectionIdValidationTests
 
     /// <summary>
     /// Registers an async (declaration-only) EF projection inside a fresh Alberto module and
-    /// returns an <see cref="Action"/> that can be passed to FluentAssertions.
+    /// returns an <see cref="Action"/> that can be passed to an exception assertion.
     /// </summary>
     private static Action RegisterAsync(string processorId) =>
         () =>
@@ -41,7 +41,7 @@ public class EfProjectionIdValidationTests
 
     /// <summary>
     /// Registers an async EF projection with an <c>afterCommit</c> callback and returns an
-    /// <see cref="Action"/> that can be passed to FluentAssertions.
+    /// <see cref="Action"/> that can be passed to an exception assertion.
     /// </summary>
     private static Action RegisterWithAfterCommit(string processorId) =>
         () =>
@@ -58,7 +58,7 @@ public class EfProjectionIdValidationTests
 
     /// <summary>
     /// Registers an inline EF projection and returns an <see cref="Action"/> that can be
-    /// passed to FluentAssertions. The inline path skips <c>DeclareProcessor</c>, so validation
+    /// passed to an exception assertion. The inline path skips <c>DeclareProcessor</c>, so validation
     /// must fire before the mode branch.
     /// </summary>
     private static Action RegisterInline(string processorId) =>
@@ -81,9 +81,9 @@ public class EfProjectionIdValidationTests
     [InlineData("my#processor")]
     public void Async_overload_rejects_processor_id_containing_separator_chars(string processorId)
     {
-        RegisterAsync(processorId).Should().Throw<ArgumentException>()
-            .WithParameterName("processorId")
-            .WithMessage($"*'{processorId}'*");
+        var exception = Assert.ThrowsAny<ArgumentException>(RegisterAsync(processorId));
+        Assert.Equal("processorId", exception.ParamName);
+        Assert.Contains($"'{processorId}'", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
@@ -91,9 +91,9 @@ public class EfProjectionIdValidationTests
     [InlineData("my#processor")]
     public void AfterCommit_overload_rejects_processor_id_containing_separator_chars(string processorId)
     {
-        RegisterWithAfterCommit(processorId).Should().Throw<ArgumentException>()
-            .WithParameterName("processorId")
-            .WithMessage($"*'{processorId}'*");
+        var exception = Assert.ThrowsAny<ArgumentException>(RegisterWithAfterCommit(processorId));
+        Assert.Equal("processorId", exception.ParamName);
+        Assert.Contains($"'{processorId}'", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
@@ -101,9 +101,9 @@ public class EfProjectionIdValidationTests
     [InlineData("my#processor")]
     public void Inline_overload_rejects_processor_id_containing_separator_chars(string processorId)
     {
-        RegisterInline(processorId).Should().Throw<ArgumentException>()
-            .WithParameterName("processorId")
-            .WithMessage($"*'{processorId}'*");
+        var exception = Assert.ThrowsAny<ArgumentException>(RegisterInline(processorId));
+        Assert.Equal("processorId", exception.ParamName);
+        Assert.Contains($"'{processorId}'", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     // ── reserved words ─────────────────────────────────────────────────────────────────────
@@ -114,9 +114,9 @@ public class EfProjectionIdValidationTests
     [InlineData("tenant-raw")]
     public void Async_overload_rejects_reserved_processor_ids(string processorId)
     {
-        RegisterAsync(processorId).Should().Throw<ArgumentException>()
-            .WithParameterName("processorId")
-            .WithMessage($"*'{processorId}'*reserved*");
+        var exception = Assert.ThrowsAny<ArgumentException>(RegisterAsync(processorId));
+        Assert.Equal("processorId", exception.ParamName);
+        Assert.Matches($"(?is)'{Regex.Escape(processorId)}'.*reserved", exception.Message);
     }
 
     [Theory]
@@ -125,9 +125,9 @@ public class EfProjectionIdValidationTests
     [InlineData("tenant-raw")]
     public void AfterCommit_overload_rejects_reserved_processor_ids(string processorId)
     {
-        RegisterWithAfterCommit(processorId).Should().Throw<ArgumentException>()
-            .WithParameterName("processorId")
-            .WithMessage($"*'{processorId}'*reserved*");
+        var exception = Assert.ThrowsAny<ArgumentException>(RegisterWithAfterCommit(processorId));
+        Assert.Equal("processorId", exception.ParamName);
+        Assert.Matches($"(?is)'{Regex.Escape(processorId)}'.*reserved", exception.Message);
     }
 
     [Theory]
@@ -136,9 +136,9 @@ public class EfProjectionIdValidationTests
     [InlineData("tenant-raw")]
     public void Inline_overload_rejects_reserved_processor_ids(string processorId)
     {
-        RegisterInline(processorId).Should().Throw<ArgumentException>()
-            .WithParameterName("processorId")
-            .WithMessage($"*'{processorId}'*reserved*");
+        var exception = Assert.ThrowsAny<ArgumentException>(RegisterInline(processorId));
+        Assert.Equal("processorId", exception.ParamName);
+        Assert.Matches($"(?is)'{Regex.Escape(processorId)}'.*reserved", exception.Message);
     }
 
     // ── valid ids are accepted ─────────────────────────────────────────────────────────────
@@ -152,8 +152,8 @@ public class EfProjectionIdValidationTests
     {
         // The test is not asserting that the registration completes host startup (the full DI
         // graph is not wired), only that the validation guard does not reject a legitimate id.
-        RegisterAsync(processorId).Should().NotThrow(
-            $"'{processorId}' does not contain ':' or '#' and is not a reserved word");
+        // '{processorId}' does not contain ':' or '#' and is not a reserved word
+        RegisterAsync(processorId)();
     }
 
     [Theory]
@@ -163,8 +163,8 @@ public class EfProjectionIdValidationTests
     [InlineData("counter_projection")]
     public void AfterCommit_overload_accepts_valid_processor_ids(string processorId)
     {
-        RegisterWithAfterCommit(processorId).Should().NotThrow(
-            $"'{processorId}' does not contain ':' or '#' and is not a reserved word");
+        // '{processorId}' does not contain ':' or '#' and is not a reserved word
+        RegisterWithAfterCommit(processorId)();
     }
 
     [Theory]
@@ -174,7 +174,7 @@ public class EfProjectionIdValidationTests
     [InlineData("counter_projection")]
     public void Inline_overload_accepts_valid_processor_ids(string processorId)
     {
-        RegisterInline(processorId).Should().NotThrow(
-            $"'{processorId}' does not contain ':' or '#' and is not a reserved word");
+        // '{processorId}' does not contain ':' or '#' and is not a reserved word
+        RegisterInline(processorId)();
     }
 }

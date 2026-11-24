@@ -4,7 +4,6 @@ using Alberto.Configuration;
 using Alberto.InMemory;
 using Alberto.DeadLetters;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -101,7 +100,7 @@ public sealed class ControlLoopAssemblerTests
         var liveProcessor = new RecordingProcessor("live-proc");
         var shadowProcessor = new RecordingProcessor("shadow-proc") { IsRebuilding = true };
 
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
 
         var execOptions = new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Disabled };
@@ -141,12 +140,14 @@ public sealed class ControlLoopAssemblerTests
         await head.StopAsync(cancellationToken);
 
         // Both loops processed the event.
-        liveProcessor.ProcessedValues.Should().ContainSingle("hello");
-        shadowProcessor.ProcessedValues.Should().ContainSingle("hello");
+        // hello
+        Assert.Single(liveProcessor.ProcessedValues);
+        // hello
+        Assert.Single(shadowProcessor.ProcessedValues);
 
         // Both execution logs have the same shape: [before, after].
-        liveLog.Should().BeEquivalentTo(shadowLog,
-            "middleware must execute in the same order for live and shadow loops");
+        // middleware must execute in the same order for live and shadow loops
+        Assert.Equivalent(shadowLog, liveLog, strict: true);
     }
 
     /// <summary>
@@ -159,7 +160,7 @@ public sealed class ControlLoopAssemblerTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
 
         // Two per-event middlewares but zero batch middlewares → hasUnpaired = true.
@@ -208,10 +209,9 @@ public sealed class ControlLoopAssemblerTests
         await loop.StopAsync(cancellationToken);
         await head.StopAsync(cancellationToken);
 
-        perEventCallCount.Should().BeGreaterThan(0,
-            "per-event dispatch must be used when there are unpaired per-event middlewares");
-        batchCallCount.Should().Be(0,
-            "batch dispatch must not be used when per-event middlewares have no batch counterpart");
+        Assert.True(perEventCallCount > 0, "per-event dispatch must be used when there are unpaired per-event middlewares");
+        // batch dispatch must not be used when per-event middlewares have no batch counterpart
+        Assert.Equal(0, batchCallCount);
     }
 
     /// <summary>
@@ -231,7 +231,7 @@ public sealed class ControlLoopAssemblerTests
 
         var deadLetterStore = new InMemoryDeadLetterStore();
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
 
         var assembler = new ControlLoopAssembler(
@@ -270,9 +270,8 @@ public sealed class ControlLoopAssemblerTests
         await loop.StopAsync(cancellationToken);
         await head.StopAsync(cancellationToken);
 
-        entries.Should().ContainSingle()
-            .Which.FailedAt.Should().Be(fixedInstant,
-                "FailedAt must come from the FakeTimeProvider flowing through the assembler");
+        // FailedAt must come from the FakeTimeProvider flowing through the assembler
+        Assert.Equal(fixedInstant, Assert.Single(entries).FailedAt);
     }
 
     private sealed class AlwaysFailingProcessor(string processorId) : IEventProcessor
@@ -340,9 +339,9 @@ public sealed class ControlLoopAssemblerTests
         // RecordingProcessor is per-event only: under the Required default, ControlLoop throws.
         var create = () => assembler.Create(
             new RecordingProcessor(processorId),
-            new EventStoreHead(backend, TimeSpan.FromMilliseconds(20)), backend, new InMemoryCheckpointStore(),
+            new EventStoreHead(backend, TimeSpan.FromMilliseconds(20)), backend, new InMemoryFencedCheckpointStore(),
             pollingInterval: TimeSpan.FromMilliseconds(10), batchSize: 100, moduleKey: "test");
 
-        create.Should().NotThrow();
+        create();
     }
 }

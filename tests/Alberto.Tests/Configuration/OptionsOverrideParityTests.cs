@@ -1,6 +1,6 @@
 using System.Reflection;
 using Alberto.Configuration;
-using FluentAssertions;
+using Alberto.Subscriptions;
 using Xunit;
 
 namespace Alberto.Tests.Configuration;
@@ -29,6 +29,11 @@ public class OptionsOverrideParityTests
             .ToList();
     }
 
+    private static readonly HashSet<string> CodeOnlyOptions =
+    [
+        $"{nameof(ProcessorExecutionOptions)}.{nameof(ProcessorExecutionOptions.StartFrom)}",
+    ];
+
     private static PropertyInfo[] PublicProperties(Type type) =>
         type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.GetMethod?.IsPublic == true && p.GetIndexParameters().Length == 0)
@@ -52,8 +57,8 @@ public class OptionsOverrideParityTests
     [Fact]
     public void At_least_one_options_override_pair_is_discovered()
     {
-        DiscoverPairs().Should().NotBeEmpty(
-            "the parity test is worthless if it silently discovers nothing");
+        // the parity test is worthless if it silently discovers nothing
+        Assert.NotEmpty(DiscoverPairs());
     }
 
     [Fact]
@@ -64,7 +69,9 @@ public class OptionsOverrideParityTests
         foreach (var (overridesType, optionsType) in DiscoverPairs())
         {
             // Computed properties (no SetMethod) are not configuration knobs and have no mirror.
-            foreach (var prop in PublicProperties(optionsType).Where(p => p.SetMethod != null))
+            foreach (var prop in PublicProperties(optionsType)
+                         .Where(p => p.SetMethod != null)
+                         .Where(p => !CodeOnlyOptions.Contains($"{optionsType.Name}.{p.Name}")))
             {
                 var mirror = overridesType.GetProperty(prop.Name, BindingFlags.Public | BindingFlags.Instance);
 
@@ -89,7 +96,7 @@ public class OptionsOverrideParityTests
             }
         }
 
-        problems.Should().BeEmpty(string.Join(Environment.NewLine, problems));
+        Assert.Empty(problems);
     }
 
     [Fact]
@@ -99,7 +106,10 @@ public class OptionsOverrideParityTests
 
         foreach (var (overridesType, optionsType) in DiscoverPairs())
         {
-            var known = PublicProperties(optionsType).Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+            // An internal option (RebuildOptions.BatchSize) is reachable only through configuration,
+            // so its mirror is legitimate even though the options record does not expose it.
+            var known = optionsType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                .Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
 
             foreach (var mirror in PublicProperties(overridesType))
             {
@@ -108,6 +118,6 @@ public class OptionsOverrideParityTests
             }
         }
 
-        problems.Should().BeEmpty(string.Join(Environment.NewLine, problems));
+        Assert.Empty(problems);
     }
 }

@@ -73,7 +73,19 @@ internal sealed class RebuildableProjection
     /// the checkpoint it left off at.
     /// </remarks>
     public static string ShadowProcessorId(string processorId, int rebuildVersion) =>
-        $"{processorId}::rebuild::{rebuildVersion}";
+        $"{processorId}{RebuildMarker}{rebuildVersion}";
+
+    private const string RebuildMarker = "::rebuild::";
+
+    /// <summary>
+    /// The declared processor a shadow id replays, so the shadow runs under the declaration's
+    /// options. A live processor id is returned unchanged.
+    /// </summary>
+    internal static string DeclaredProcessorId(string processorId)
+    {
+        var marker = processorId.IndexOf(RebuildMarker, StringComparison.Ordinal);
+        return marker < 0 ? processorId : processorId[..marker];
+    }
 
     /// <summary>
     /// Returns true when <paramref name="processorId"/> was produced by
@@ -102,7 +114,7 @@ internal sealed class RebuildableProjection
     /// </para>
     /// </remarks>
     public static bool IsShadowProcessorId(string processorId) =>
-        processorId.Contains("::rebuild::", StringComparison.Ordinal);
+        processorId.Contains(RebuildMarker, StringComparison.Ordinal);
 }
 
 /// <summary>

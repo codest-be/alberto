@@ -1,6 +1,5 @@
 using Alberto.EntityFramework.Inline;
 using Alberto.Projections;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.EntityFramework;
@@ -43,16 +42,16 @@ public sealed class EfInlineProjectionRebuildVersionTests(EfProjectionTestFixtur
 
         var act = async () => await projection.ProcessAsync(
             [EfTestEnvelopes.ForCounterIncremented(entityId, amount: 7, position: 1)],
-            cancellationToken: TestContext.Current.CancellationToken);
+            AppendTransaction.None, TestContext.Current.CancellationToken);
 
-        await act.Should().NotThrowAsync();
+        await act();
 
         var versions = await fixture.ReadVersionsAsync(entityId);
-        versions.Should().ContainKey(ProjectionVersions.Initial);
-        versions[ProjectionVersions.Initial].Counter.Should().Be(7);
+        Assert.Contains(ProjectionVersions.Initial, versions);
+        Assert.Equal(7, versions[ProjectionVersions.Initial].Counter);
 
         // The shadow row is the rebuild's business, not the live projection's.
-        versions[2].Counter.Should().Be(999);
+        Assert.Equal(999, versions[2].Counter);
     }
 
     [Fact]
@@ -78,11 +77,11 @@ public sealed class EfInlineProjectionRebuildVersionTests(EfProjectionTestFixtur
 
         await projection.ProcessAsync(
             [EfTestEnvelopes.ForCounterIncremented(entityId, amount: 7, position: 10)],
-            cancellationToken: TestContext.Current.CancellationToken);
+            AppendTransaction.None, TestContext.Current.CancellationToken);
 
         var versions = await fixture.ReadVersionsAsync(entityId);
-        versions[2].Counter.Should().Be(7);
-        versions[ProjectionVersions.Initial].Counter.Should().Be(100);
+        Assert.Equal(7, versions[2].Counter);
+        Assert.Equal(100, versions[ProjectionVersions.Initial].Counter);
     }
 
     [Fact]
@@ -97,12 +96,12 @@ public sealed class EfInlineProjectionRebuildVersionTests(EfProjectionTestFixtur
 
         await projection.ProcessAsync(
             [EfTestEnvelopes.ForCounterIncremented(entityId, amount: 4, position: 1)],
-            cancellationToken: TestContext.Current.CancellationToken);
+            AppendTransaction.None, TestContext.Current.CancellationToken);
 
         // Without an explicit stamp this row lands on the column default (1) instead, which
         // reads correctly only for as long as the live version happens to be 1.
         var versions = await fixture.ReadVersionsAsync(entityId);
-        versions.Keys.Should().Equal(3);
-        versions[3].Counter.Should().Be(4);
+        Assert.Equal([3], versions.Keys);
+        Assert.Equal(4, versions[3].Counter);
     }
 }

@@ -12,7 +12,8 @@ namespace Alberto.Messaging;
 internal sealed class OutboxHandler(
     IMessageMappingRegistry registry,
     IOutboxStore store,
-    IServiceScopeFactory scopeFactory) : IEventProcessor, IBatchableProcessor, IProcessorLifecycle
+    IServiceScopeFactory scopeFactory,
+    WakeSignal? wake = null) : IEventProcessor, IBatchableProcessor, IProcessorLifecycle
 {
     internal const string ProcessorIdValue = "outbox";
     private const int MaxConcurrentInserts = 8;
@@ -35,6 +36,7 @@ internal sealed class OutboxHandler(
         var message = await MapAsync(envelope, cancellationToken);
         if (message is null) return;
         await store.InsertAsync(BuildEntry(message, envelope), cancellationToken);
+        wake?.Notify();
     }
 
     /// <inheritdoc/>
@@ -61,6 +63,8 @@ internal sealed class OutboxHandler(
             entries,
             new ParallelOptions { MaxDegreeOfParallelism = MaxConcurrentInserts, CancellationToken = cancellationToken },
             (entry, token) => new ValueTask(store.InsertAsync(entry, token)));
+        if (entries.Count > 0)
+            wake?.Notify();
     }
 
     private async Task<ExternalMessage?> MapAsync(IEventEnvelope envelope, CancellationToken cancellationToken)

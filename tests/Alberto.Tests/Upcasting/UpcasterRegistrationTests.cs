@@ -7,7 +7,6 @@ using Alberto.InMemory;
 using Alberto.Projections;
 using Alberto.Subscriptions;
 using Alberto.Upcasting;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -159,9 +158,8 @@ public sealed class UpcasterDiWiringTests
             (_, e) => e,
             CancellationToken.None);
 
-        foldObserved.Should().BeOfType<UpcasterRegV2>()
-            .Which.Country.Should().Be("reg-upcasted",
-                "AlbertoStore.Fold must route through EventSerializer.Deserialize which applies the upcaster");
+        // AlbertoStore.Fold must route through EventSerializer.Deserialize which applies the upcaster
+        Assert.Equal("reg-upcasted", Assert.IsType<UpcasterRegV2>(foldObserved).Country);
 
         // Assert B — projection: DeclaredAsyncProjection reads the keyed serializer from DI
         // (via AddProjection's sp.GetKeyedService<EventSerializer>(moduleKey)) and also
@@ -175,14 +173,14 @@ public sealed class UpcasterDiWiringTests
         await projection.ProcessEventAsync(v1Envelope);
 
         var states = await stateStore.LoadManyAsync([orderId.ToString()], CancellationToken.None);
-        states[orderId.ToString()].Country.Should().Be("reg-upcasted",
-            "projection must route through EventSerializer.Deserialize which applies the upcaster");
+        // projection must route through EventSerializer.Deserialize which applies the upcaster
+        Assert.Equal("reg-upcasted", states[orderId.ToString()].Country);
 
         // Assert C — no unkeyed EventSerializer is registered (multi-module isolation fix).
         // A second module's outbox mapper must not accidentally resolve this module's serializer.
-        sp.GetService<EventSerializer>().Should().BeNull(
-            "WithEventsFrom/Register must use AddKeyedSingleton only; " +
-            "TryAddSingleton(serializer) was removed to prevent multi-module serializer leaks");
+        // WithEventsFrom/Register must use AddKeyedSingleton only; TryAddSingleton(serializer) was
+        // removed to prevent multi-module serializer leaks
+        Assert.Null(sp.GetService<EventSerializer>());
     }
 }
 
@@ -238,18 +236,18 @@ public sealed class UpcasterOrderIndependenceTests
         using var __ = services2.BuildServiceProvider();
 
         // Both orderings must produce the same set of declarations.
-        declarationsWhenAfter.Should().HaveCount(1,
-            "one AddUpcaster call must produce exactly one declaration");
-        declarationsWhenBefore.Should().HaveCount(1,
-            "one AddUpcaster call must produce exactly one declaration");
+        // one AddUpcaster call must produce exactly one declaration
+        Assert.Single(declarationsWhenAfter);
+        // one AddUpcaster call must produce exactly one declaration
+        Assert.Single(declarationsWhenBefore);
 
-        declarationsWhenAfter[0].EventTypeId.Should().Be(decl.EventTypeId,
-            "declaration EventTypeId must match in the WithEventsFrom-then-AddUpcaster ordering");
-        declarationsWhenBefore[0].EventTypeId.Should().Be(decl.EventTypeId,
-            "declaration EventTypeId must match in the AddUpcaster-then-WithEventsFrom ordering");
+        // declaration EventTypeId must match in the WithEventsFrom-then-AddUpcaster ordering
+        Assert.Equal(decl.EventTypeId, declarationsWhenAfter[0].EventTypeId);
+        // declaration EventTypeId must match in the AddUpcaster-then-WithEventsFrom ordering
+        Assert.Equal(decl.EventTypeId, declarationsWhenBefore[0].EventTypeId);
 
-        declarationsWhenAfter[0].CurrentVersion.Should().Be(declarationsWhenBefore[0].CurrentVersion,
-            "the CurrentVersion produced by the upcaster must be the same regardless of ordering");
+        // the CurrentVersion produced by the upcaster must be the same regardless of ordering
+        Assert.Equal(declarationsWhenBefore[0].CurrentVersion, declarationsWhenAfter[0].CurrentVersion);
     }
 }
 
@@ -286,13 +284,13 @@ public sealed class UpcasterStartupValidationTests
         var validator = new AlbertoModuleValidator();
         var failures = validator.Collect(definition);
 
-        failures.Should().ContainSingle(f => f.Code == "ALB0018",
-            "a Version = 2 event type with no upcaster must surface ALB0018 at startup " +
-            "rather than failing silently at runtime when an old event is read");
+        // a Version = 2 event type with no upcaster must surface ALB0018 at startup rather than failing
+        // silently at runtime when an old event is read
+        Assert.Single(failures, f => f.Code == "ALB0018");
 
         var failure = failures.First(f => f.Code == "ALB0018");
-        failure.Problem.Should().Contain("val-order-event",
-            "the failure message must identify the event type that is missing an upcaster");
+        // the failure message must identify the event type that is missing an upcaster
+        Assert.Contains("val-order-event", failure.Problem);
     }
 
     [Fact]
@@ -313,7 +311,7 @@ public sealed class UpcasterStartupValidationTests
 
         var validator = new AlbertoModuleValidator();
 
-        validator.Collect(definition).Should().NotContain(f => f.Code == "ALB0018");
+        Assert.DoesNotContain(validator.Collect(definition), f => f.Code == "ALB0018");
     }
 
     [Fact]
@@ -336,8 +334,8 @@ public sealed class UpcasterStartupValidationTests
         var validator = new AlbertoModuleValidator();
         var failures = validator.Collect(definition);
 
-        failures.Should().NotContain(f => f.Code == "ALB0018",
-            "a Version = 2 event type with a registered upcaster must not produce ALB0018");
+        // a Version = 2 event type with a registered upcaster must not produce ALB0018
+        Assert.DoesNotContain(failures, f => f.Code == "ALB0018");
     }
 
     [Fact]
@@ -361,11 +359,11 @@ public sealed class UpcasterStartupValidationTests
         var validator = new AlbertoModuleValidator();
         var failures = validator.Collect(definition);
 
-        failures.Should().ContainSingle(f => f.Code == "ALB0019",
-            "an upcaster for a slug absent from the events assembly must surface ALB0019 " +
-            "so that typos and orphaned declarations are caught at startup");
+        // an upcaster for a slug absent from the events assembly must surface ALB0019 so that typos and
+        // orphaned declarations are caught at startup
+        Assert.Single(failures, f => f.Code == "ALB0019");
 
-        failures.First(f => f.Code == "ALB0019").Problem.Should().Contain("unknown-slug");
+        Assert.Contains("unknown-slug", failures.First(f => f.Code == "ALB0019").Problem);
     }
 
     // -----------------------------------------------------------------------
@@ -397,15 +395,16 @@ public sealed class UpcasterStartupValidationTests
 
         var failures = new AlbertoModuleValidator().Collect(definition);
 
-        failures.Should().NotContain(f => f.Code == "ALB0018",
-            "an upcaster is registered for the slug, so the coverage check is satisfied — " +
-            "ALB0020 exists precisely because ALB0018 cannot see this gap");
+        // an upcaster is registered for the slug, so the coverage check is satisfied — ALB0020 exists
+        // precisely because ALB0018 cannot see this gap
+        Assert.DoesNotContain(failures, f => f.Code == "ALB0018");
 
-        var failure = failures.Should().ContainSingle(f => f.Code == "ALB0020").Subject;
-        failure.Problem.Should().Contain("val-order-event");
-        failure.Problem.Should().Contain("3", "the message must name the declared version");
-        failure.Remedy.Should().Contain("From<TOld>(2",
-            "the remedy must tell the user where the chain has to resume");
+        var failure = Assert.Single(failures, f => f.Code == "ALB0020");
+        Assert.Contains("val-order-event", failure.Problem);
+        // the message must name the declared version
+        Assert.Contains("3", failure.Problem);
+        // the remedy must tell the user where the chain has to resume
+        Assert.Contains("From<TOld>(2", failure.Remedy);
     }
 
     [Fact]
@@ -430,9 +429,8 @@ public sealed class UpcasterStartupValidationTests
 
         var failures = new AlbertoModuleValidator().Collect(definition);
 
-        failures.Should().ContainSingle(f => f.Code == "ALB0020")
-            .Which.Remedy.Should().Contain("Version = 2",
-                "the remedy must offer raising the attribute to match the chain");
+        // the remedy must offer raising the attribute to match the chain
+        Assert.Contains("Version = 2", Assert.Single(failures, f => f.Code == "ALB0020").Remedy);
     }
 
     [Fact]
@@ -451,7 +449,6 @@ public sealed class UpcasterStartupValidationTests
             UpcasterDeclarations = [decl],
         };
 
-        new AlbertoModuleValidator().Collect(definition)
-            .Should().NotContain(f => f.Code == "ALB0020");
+        Assert.DoesNotContain(new AlbertoModuleValidator().Collect(definition), f => f.Code == "ALB0020");
     }
 }

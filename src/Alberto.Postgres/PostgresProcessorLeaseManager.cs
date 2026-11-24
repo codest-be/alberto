@@ -8,7 +8,7 @@ namespace Alberto.Postgres;
 /// Leases expire and must be periodically renewed, enabling single-leader processing
 /// per processor and automatic recovery when replicas crash.
 /// </summary>
-internal sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager, IRebalancingLeaseManager
+internal sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager, IRebalancingLeaseManager, IBatchProcessorLeaseManager
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly SchemaQualifier _schema;
@@ -76,6 +76,74 @@ internal sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager, IR
         }
 
         return null;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The rules of <see cref="TryAcquireAsync"/>, set-based. Unlike that upsert, which draws its
+    /// token in VALUES before it knows whether it wins, nextval runs only on rows actually taken:
+    /// existing rows go through an UPDATE over the claimable ones, absent ids through an INSERT
+    /// that does nothing on conflict. So contending for leases held by a live replica draws no
+    /// token; only an INSERT that loses a race for a brand-new row still does, and a gap in the
+    /// sequence is harmless. SKIP LOCKED leaves a row another acquirer is taking right now to
+    /// that acquirer; the next scan sees the outcome.
+    /// </remarks>
+    public async Task<IReadOnlyList<IProcessorLease>> TryAcquireManyAsync(
+        string consumerId, IReadOnlyCollection<string> processorIds, string replicaId,
+        CancellationToken cancellationToken)
+    {
+        var leases = _schema.Table("alberto_processor_leases");
+        var nextToken = $"nextval('{_schema.Table("alberto_fence_tokens")}')";
+
+        await using var cmd = _dataSource.CreateCommand($@"
+            WITH claimable AS (
+                SELECT processor_id FROM {leases}
+                WHERE consumer_id = @consumer_id
+                  AND processor_id = ANY(@processor_ids)
+                  AND (expires_at < now() OR replica_id = @replica_id)
+                ORDER BY processor_id
+                FOR UPDATE SKIP LOCKED
+            ),
+            taken AS (
+                UPDATE {leases} l
+                SET replica_id = @replica_id,
+                    acquired_at = CASE WHEN l.replica_id = @replica_id THEN l.acquired_at ELSE now() END,
+                    expires_at = now() + @lease_duration,
+                    fence_token = {nextToken}
+                FROM claimable x
+                WHERE l.consumer_id = @consumer_id AND l.processor_id = x.processor_id
+                  AND (l.expires_at < now() OR l.replica_id = @replica_id)
+                RETURNING l.processor_id, l.expires_at, l.fence_token
+            ),
+            inserted AS (
+                INSERT INTO {leases} (consumer_id, processor_id, replica_id, acquired_at, expires_at, fence_token)
+                SELECT @consumer_id, w.processor_id, @replica_id, now(), now() + @lease_duration, {nextToken}
+                FROM (SELECT DISTINCT unnest(@processor_ids) AS processor_id) w
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM {leases} l
+                    WHERE l.consumer_id = @consumer_id AND l.processor_id = w.processor_id)
+                ORDER BY w.processor_id
+                ON CONFLICT (consumer_id, processor_id) DO NOTHING
+                RETURNING processor_id, expires_at, fence_token
+            )
+            SELECT * FROM taken
+            UNION ALL
+            SELECT * FROM inserted");
+
+        cmd.Parameters.AddWithValue("consumer_id", consumerId);
+        cmd.Parameters.AddWithValue("processor_ids", processorIds.ToArray());
+        cmd.Parameters.AddWithValue("replica_id", replicaId);
+        cmd.Parameters.AddWithValue("lease_duration", LeaseDuration);
+
+        var won = new List<IProcessorLease>();
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            won.Add(new ProcessorLease(
+                reader.GetString(0),
+                new DateTimeOffset(reader.GetDateTime(1), TimeSpan.Zero),
+                reader.GetInt64(2)));
+
+        return won;
     }
 
     /// <inheritdoc/>

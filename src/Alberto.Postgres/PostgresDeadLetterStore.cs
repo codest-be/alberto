@@ -12,7 +12,7 @@ namespace Alberto.Postgres;
 /// The compatibility constructor's <c>multiTenant</c> flag can assert multi-tenant storage,
 /// but never overrides the topology reported by the schema.
 /// </remarks>
-internal sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
+internal sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore, IDeadLetterDueProbe
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly SchemaQualifier _schema;
@@ -412,6 +412,48 @@ internal sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
     // The tenant_id column in the SELECT comes from alberto_events (not dead_letter_events)
     // because it reflects the event's origin tenant.  The probe result is cached so the
     // catalog is not queried on every call (SQL-4).
+    /// <inheritdoc />
+    async Task<IReadOnlySet<string>> IDeadLetterDueProbe.FindProcessorsWithDueAsync(
+        IReadOnlyCollection<string> processorIds, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        if (processorIds.Count == 0)
+            return new HashSet<string>();
+
+        // The claim's predicate (BuildClaimSqlAsync), split into one probe per partial index so
+        // each EXISTS is a single index lookup. Same clocks as the claim: @now is the
+        // application's, the lease check is the database's.
+        var table = _schema.Table("alberto_dead_letter_events");
+        var sql = $"""
+            SELECT p.id
+            FROM unnest(@processorIds) AS p(id)
+            WHERE EXISTS (
+                    SELECT 1 FROM {table}
+                    WHERE processor_id = p.id
+                      AND retry_requested = TRUE
+                      AND (claim_expires_at IS NULL OR claim_expires_at < now()))
+               OR EXISTS (
+                    SELECT 1 FROM {table}
+                    WHERE processor_id = p.id
+                      AND next_retry_at <= @now
+                      AND (claim_expires_at IS NULL OR claim_expires_at < now()))
+            """;
+
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        cmd.Parameters.AddWithValue("processorIds", processorIds.ToArray());
+        cmd.Parameters.Add(new NpgsqlParameter("now", NpgsqlTypes.NpgsqlDbType.TimestampTz)
+        {
+            Value = now.ToUniversalTime()
+        });
+
+        var due = new HashSet<string>();
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            due.Add(reader.GetString(0));
+        return due;
+    }
+
     private async Task<string> BuildClaimSqlAsync(NpgsqlConnection conn, CancellationToken cancellationToken)
     {
         var hasTenantId = await _topology.IsMultiTenantAsync(conn, cancellationToken);

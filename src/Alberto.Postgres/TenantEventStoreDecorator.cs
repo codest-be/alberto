@@ -7,7 +7,7 @@ namespace Alberto.Postgres;
 /// Reads tenant ID from ITenantAccessor and delegates to the tenant-aware inner backend.
 /// Registered when .WithTenancy() is called on the module builder.
 /// </summary>
-internal sealed class TenantEventStoreDecorator : IEventStoreBackend, IEventStoreHeadBackend
+internal sealed class TenantEventStoreDecorator : IEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
 {
     private readonly PostgresTenantEventStoreBackend _inner;
     private readonly ITenantAccessor _tenantAccessor;
@@ -90,6 +90,15 @@ internal sealed class TenantEventStoreDecorator : IEventStoreBackend, IEventStor
         return _inner.AppendForTenant(tenantId, events, dcbQuery, expectedPosition, cancellationToken);
     }
 
+    public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+        IEnumerable<IEventToPersist> events,
+        DcbQuery? dcbQuery,
+        long? expectedPosition,
+        Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
+        CancellationToken cancellationToken = default)
+        => _inner.AppendForTenant(
+            _tenantAccessor.TenantId, events, dcbQuery, expectedPosition, inTransaction, cancellationToken);
+
     public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
         => _inner.GetLastPositionGlobal(cancellationToken);
 
@@ -108,4 +117,7 @@ internal sealed class TenantEventStoreDecorator : IEventStoreBackend, IEventStor
     public Task<long> GetStableHeadUpToAsync(
         long afterPosition, long upToPosition, CancellationToken cancellationToken = default)
         => _inner.GetStableHeadGlobalAsync(afterPosition, upToPosition, cancellationToken);
+
+    public Task<HeadSnapshot> GetHeadSnapshotAsync(long afterPosition, int windowSize, CancellationToken cancellationToken)
+        => _inner.GetHeadSnapshotGlobalAsync(afterPosition, windowSize, cancellationToken);
 }

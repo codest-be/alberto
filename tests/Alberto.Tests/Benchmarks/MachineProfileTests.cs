@@ -1,5 +1,4 @@
 using Alberto.Benchmarks.Core;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Benchmarks;
@@ -20,25 +19,25 @@ public class MachineProfileTests
     [Fact]
     public void Identical_hardware_produces_an_identical_profile_id()
     {
-        Sample().ProfileId.Should().Be(Sample().ProfileId);
+        Assert.Equal(Sample().ProfileId, Sample().ProfileId);
     }
 
     [Fact]
     public void A_different_core_count_produces_a_different_profile_id()
     {
-        Sample(cores: 8).ProfileId.Should().NotBe(Sample(cores: 16).ProfileId);
+        Assert.NotEqual(Sample(cores: 16).ProfileId, Sample(cores: 8).ProfileId);
     }
 
     [Fact]
     public void The_profile_id_is_prefixed_with_the_label()
     {
-        Sample(label: "ci").ProfileId.Should().StartWith("ci-");
+        Assert.StartsWith("ci-", Sample(label: "ci").ProfileId);
     }
 
     [Fact]
     public void The_profile_id_is_filesystem_safe()
     {
-        Sample().ProfileId.Should().MatchRegex("^[a-z0-9-]+$");
+        Assert.Matches("^[a-z0-9-]+$", Sample().ProfileId);
     }
 
     [Fact]
@@ -46,8 +45,8 @@ public class MachineProfileTests
     {
         var profile = MachineProfile.Capture();
 
-        profile.LogicalCores.Should().BeGreaterThan(0);
-        profile.DotnetVersion.Should().NotBeNullOrWhiteSpace();
-        profile.ProfileId.Should().NotBeNullOrWhiteSpace();
+        Assert.True(profile.LogicalCores > 0);
+        Assert.False(string.IsNullOrWhiteSpace(profile.DotnetVersion));
+        Assert.False(string.IsNullOrWhiteSpace(profile.ProfileId));
     }
 }

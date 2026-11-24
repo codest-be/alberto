@@ -1,5 +1,4 @@
 using Alberto.Tenancy;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Tenancy;
@@ -28,8 +27,8 @@ public class ShardRoutingTests
         await store.StreamAllAsync().ToListAsync();
         await store.GetLastPositionAsync();
 
-        shards["orders#db2"].Calls.Should().Equal("Append", "Stream", "StreamAll", "LastPosition");
-        shards["orders#db1"].Calls.Should().BeEmpty();
+        Assert.Equal(["Append", "Stream", "StreamAll", "LastPosition"], shards["orders#db2"].Calls);
+        Assert.Empty(shards["orders#db1"].Calls);
     }
 
     [Fact]
@@ -42,8 +41,8 @@ public class ShardRoutingTests
         await Store(resolver, shards, "acme").AppendAsync(OneEvent);
         await Store(resolver, shards, "globex").AppendAsync(OneEvent);
 
-        shards["orders#db1"].Calls.Should().Equal("Append");
-        shards["orders#db2"].Calls.Should().Equal("Append");
+        Assert.Equal(["Append"], shards["orders#db1"].Calls);
+        Assert.Equal(["Append"], shards["orders#db2"].Calls);
     }
 
     [Fact]
@@ -62,8 +61,8 @@ public class ShardRoutingTests
         await resolver.RefreshAsync();
         await store.AppendAsync(OneEvent);
 
-        shards["orders#db1"].Calls.Should().Equal("Append");
-        shards["orders#db2"].Calls.Should().Equal("Append");
+        Assert.Equal(["Append"], shards["orders#db1"].Calls);
+        Assert.Equal(["Append"], shards["orders#db2"].Calls);
     }
 
     [Fact]
@@ -73,8 +72,9 @@ public class ShardRoutingTests
 
         var append = async () => await store.AppendAsync(OneEvent);
 
-        await append.Should().ThrowAsync<InvalidOperationException>();
-        shards.Values.Should().OnlyContain(s => s.Calls.Count == 0);
+        await Assert.ThrowsAnyAsync<InvalidOperationException>(append);
+        Assert.NotEmpty(shards.Values);
+        Assert.All(shards.Values, s => Assert.True(s.Calls.Count == 0));
     }
 
     [Fact]
@@ -85,8 +85,9 @@ public class ShardRoutingTests
 
         var append = async () => await store.AppendAsync(OneEvent);
 
-        await append.Should().ThrowAsync<UnknownTenantException>();
-        shards.Values.Should().OnlyContain(s => s.Calls.Count == 0);
+        await Assert.ThrowsAnyAsync<UnknownTenantException>(append);
+        Assert.NotEmpty(shards.Values);
+        Assert.All(shards.Values, s => Assert.True(s.Calls.Count == 0));
     }
 
     [Fact]
@@ -108,15 +109,15 @@ public class ShardRoutingTests
         var positionFromAcmeShard = await acmeStore.GetLastPositionAsync();
         var positionFromGlobexShard = await globexStore.GetLastPositionAsync();
 
-        positionFromAcmeShard.Should().Be(42L);
-        positionFromGlobexShard.Should().Be(42L);
+        Assert.Equal(42L, positionFromAcmeShard);
+        Assert.Equal(42L, positionFromGlobexShard);
 
         // The type system provides no guard: the same long value is accepted as a cursor into
         // a different shard's store without error, even though position 42 on globex's shard
         // refers to a completely different event than position 42 on acme's shard.
         await globexStore.StreamAsync(DcbQuery.Empty, afterPosition: positionFromAcmeShard).ToListAsync();
 
-        shards["orders#db2"].LastStreamAfterPosition.Should().Be(42L);
+        Assert.Equal(42L, shards["orders#db2"].LastStreamAfterPosition);
     }
 
     private static Dictionary<string, RecordingEventStore> Shards() => new(StringComparer.Ordinal)
@@ -162,6 +163,12 @@ public class ShardRoutingTests
             Calls.Add("Append");
             return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
         }
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+            IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery, long? expectedPosition,
+            Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
+            CancellationToken cancellationToken = default)
+            => AppendAsync(events, dcbQuery, expectedPosition, cancellationToken);
 
         public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
             DcbQuery query, long afterPosition, int limit, CancellationToken cancellationToken = default)

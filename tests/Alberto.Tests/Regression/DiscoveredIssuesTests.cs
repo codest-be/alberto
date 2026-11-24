@@ -232,7 +232,7 @@ public sealed class DiscoveredIssuesTests
     {
         // ── Arrange ───────────────────────────────────────────────────────────────
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         // Three events; InMemory assigns sequential positions starting at 1.
         await backend.AppendAsync(
@@ -318,7 +318,7 @@ public sealed class DiscoveredIssuesTests
     public async Task Pipelined_HandlerFailureCoincidingWithShutdown_IsStillFaulted()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync(
             [CreateRegressionEvent("fails-during-shutdown")],
@@ -386,7 +386,7 @@ public sealed class DiscoveredIssuesTests
     public async Task Sequential_HandlerFailureCoincidingWithShutdown_IsStillFaulted()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync(
             [CreateRegressionEvent("fails-during-shutdown")],

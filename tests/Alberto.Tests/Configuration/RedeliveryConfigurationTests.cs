@@ -1,7 +1,6 @@
 using Alberto.Configuration;
 using Alberto.Subscriptions;
 using Alberto.Tests.Testing;
-using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 
@@ -49,25 +48,24 @@ public class RedeliveryConfigurationTests
 
         var policies = new ProcessorPolicies(definition.ControlLoop, definition.Processors);
 
-        definition.ControlLoop.Redelivery.MaxRedeliveries.Should().Be(3);
-        policies.For("mail").Redelivery.MaxRedeliveries.Should().Be(7);
-        policies.For("mail").Redelivery.FirstDelay.Should().Be(TimeSpan.FromMinutes(5), "unset fields follow the module value");
-        policies.For("sms").Redelivery.MaxRedeliveries.Should().Be(3);
-        Validate(definition).Should().BeEmpty();
+        Assert.Equal(3, definition.ControlLoop.Redelivery.MaxRedeliveries);
+        Assert.Equal(7, policies.For("mail").Redelivery.MaxRedeliveries);
+        // unset fields follow the module value
+        Assert.Equal(TimeSpan.FromMinutes(5), policies.For("mail").Redelivery.FirstDelay);
+        Assert.Equal(3, policies.For("sms").Redelivery.MaxRedeliveries);
+        Assert.Empty(Validate(definition));
     }
 
     [Fact]
     public void Redelivery_and_halt_keys_are_known_and_typos_are_flagged()
     {
-        Validate(Apply(Config(
+        Assert.DoesNotContain(Validate(Apply(Config(
                 ($"{Prefix}:ControlLoop:Redelivery:RedeliverWhen", "Transient"),
                 ($"{Prefix}:ControlLoop:Halt:MaxDelay", "00:02:00"),
                 ($"{Prefix}:Processors:mail:Redelivery:Enabled", "false")),
-                Processor("mail")))
-            .Should().NotContain(f => f.Code == "ALB0008");
+                Processor("mail"))), f => f.Code == "ALB0008");
 
-        Validate(Apply(Config(($"{Prefix}:ControlLoop:Redelivery:MaxRedeliverys", "3")), Processor("mail")))
-            .Should().Contain(f => f.Code == "ALB0008");
+        Assert.Contains(Validate(Apply(Config(($"{Prefix}:ControlLoop:Redelivery:MaxRedeliverys", "3")), Processor("mail"))), f => f.Code == "ALB0008");
     }
 
     [Theory]
@@ -83,8 +81,7 @@ public class RedeliveryConfigurationTests
     [InlineData("Processors:mail:Redelivery:MaxRedeliveries", "-5")]
     public void Invalid_values_are_rejected(string key, string value)
     {
-        Validate(Apply(Config(($"{Prefix}:{key}", value)), Processor("mail")))
-            .Should().Contain(f => f.Code == "ALB0007");
+        Assert.Contains(Validate(Apply(Config(($"{Prefix}:{key}", value)), Processor("mail"))), f => f.Code == "ALB0007");
     }
 
     [Fact]
@@ -94,16 +91,15 @@ public class RedeliveryConfigurationTests
             Config(($"{Prefix}:Processors:read-model:Redelivery:Enabled", "true")),
             Processor("read-model", ProcessorKind.Projection)));
 
-        failures.Should().ContainSingle(f => f.Code == "ALB0028").Which.Problem.Should().Contain("read-model");
+        Assert.Contains("read-model", Assert.Single(failures, f => f.Code == "ALB0028").Problem);
     }
 
     [Fact]
     public void DeadLetterOnMaxRetries_on_a_projection_is_rejected()
     {
-        Validate(Apply(
+        Assert.Single(Validate(Apply(
                 Config(($"{Prefix}:Processors:read-model:Retry:DeadLetterOnMaxRetries", "true")),
-                Processor("read-model", ProcessorKind.Projection)))
-            .Should().ContainSingle(f => f.Code == "ALB0028");
+                Processor("read-model", ProcessorKind.Projection))), f => f.Code == "ALB0028");
     }
 
     [Fact]
@@ -111,25 +107,23 @@ public class RedeliveryConfigurationTests
     {
         var config = Config(($"{Prefix}:Processors:p:Redelivery:MaxRedeliveries", "2"));
 
-        Validate(Apply(config, Processor("p", halts: true))).Should().ContainSingle(f => f.Code == "ALB0028");
-        Validate(Apply(config, Processor("p"))).Should().BeEmpty();
+        Assert.Single(Validate(Apply(config, Processor("p", halts: true))), f => f.Code == "ALB0028");
+        Assert.Empty(Validate(Apply(config, Processor("p"))));
     }
 
     [Fact]
     public void Module_level_redelivery_does_not_trip_the_projection_rule()
     {
-        Validate(Apply(
+        Assert.Empty(Validate(Apply(
                 Config(($"{Prefix}:ControlLoop:Redelivery:MaxRedeliveries", "2")),
-                Processor("read-model", ProcessorKind.Projection)))
-            .Should().BeEmpty();
+                Processor("read-model", ProcessorKind.Projection))));
     }
 
     [Fact]
     public void Halt_override_on_a_projection_is_allowed()
     {
-        Validate(Apply(
+        Assert.Empty(Validate(Apply(
                 Config(($"{Prefix}:Processors:read-model:Halt:MaxDelay", "00:05:00")),
-                Processor("read-model", ProcessorKind.Projection)))
-            .Should().BeEmpty();
+                Processor("read-model", ProcessorKind.Projection))));
     }
 }

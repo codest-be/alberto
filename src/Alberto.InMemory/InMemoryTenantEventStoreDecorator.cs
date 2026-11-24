@@ -21,7 +21,7 @@ namespace Alberto.InMemory;
 /// </remarks>
 internal sealed class InMemoryTenantEventStoreDecorator(
     InMemoryEventStoreBackend inner,
-    ITenantAccessor tenantAccessor) : IEventStoreBackend, IEventStoreHeadBackend
+    ITenantAccessor tenantAccessor) : IEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
 {
     public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
         DcbQuery query,
@@ -91,12 +91,26 @@ internal sealed class InMemoryTenantEventStoreDecorator(
         return inner.AppendForTenant(tenantId, events, dcbQuery, expectedPosition, cancellationToken);
     }
 
+    public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+        IEnumerable<IEventToPersist> events,
+        DcbQuery? dcbQuery,
+        long? expectedPosition,
+        Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
+        CancellationToken cancellationToken = default)
+    {
+        var tenantId = tenantAccessor.TenantId;
+        return inner.AppendForTenant(tenantId, events, dcbQuery, expectedPosition, inTransaction, cancellationToken);
+    }
+
     public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
         => inner.GetLastPositionAsync(cancellationToken);
 
     public Task<IReadOnlyList<long>> GetPositionsAsync(
         long afterPosition, int windowSize, CancellationToken cancellationToken = default)
         => inner.GetPositionsAsync(afterPosition, windowSize, cancellationToken);
+
+    public Task<HeadSnapshot> GetHeadSnapshotAsync(long afterPosition, int windowSize, CancellationToken cancellationToken)
+        => inner.GetHeadSnapshotAsync(afterPosition, windowSize, cancellationToken);
 
     // In-memory has no in-flight transactions, so there is no stable-head barrier.
     // The default implementation (long.MaxValue) is inherited from IEventStoreHeadBackend,

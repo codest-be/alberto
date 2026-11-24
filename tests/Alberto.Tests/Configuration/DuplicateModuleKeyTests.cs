@@ -1,7 +1,6 @@
 using Alberto;
 using Alberto.Configuration;
 using Alberto.InMemory;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -28,10 +27,10 @@ public class DuplicateModuleKeyTests
 
         var act = () => services.AddAlberto("orders", m => m.WithInMemory());
 
-        var exception = act.Should().Throw<InvalidOperationException>().Which;
-        exception.Message.Should().Contain("ALB0026");
-        exception.Message.Should().Contain("'orders'",
-            "the error must name the key that was registered twice");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        Assert.Contains("ALB0026", exception.Message);
+        // the error must name the key that was registered twice
+        Assert.Contains("'orders'", exception.Message);
     }
 
     [Fact]
@@ -42,7 +41,8 @@ public class DuplicateModuleKeyTests
 
         var act = () => services.AddAlberto("payments", m => m.WithInMemory());
 
-        act.Should().NotThrow("the guard is per key, not a one-module-per-collection rule");
+        // the guard is per key, not a one-module-per-collection rule
+        act();
     }
 
     [Fact]
@@ -55,7 +55,7 @@ public class DuplicateModuleKeyTests
 
         var act = () => services.AddAlberto("order", m => m.WithInMemory());
 
-        act.Should().NotThrow();
+        act();
     }
 
     [Fact]
@@ -75,16 +75,16 @@ public class DuplicateModuleKeyTests
             .WithInMemory()
             .WithControlLoop(o => o with { BatchSize = 999 }));
 
-        act.Should().Throw<InvalidOperationException>();
-        services.Count.Should().Be(descriptorsAfterFirstCall,
-            "the second call must not have registered anything before throwing");
+        Assert.ThrowsAny<InvalidOperationException>(act);
+        // the second call must not have registered anything before throwing
+        Assert.Equal(descriptorsAfterFirstCall, services.Count);
 
         var definition = services.BuildServiceProvider()
             .GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>()
             .Get("orders");
 
-        definition.ControlLoop.BatchSize.Should().Be(250,
-            "the first module's declaration must be exactly what it was");
+        // the first module's declaration must be exactly what it was
+        Assert.Equal(250, definition.ControlLoop.BatchSize);
     }
 
     [Fact]
@@ -100,6 +100,7 @@ public class DuplicateModuleKeyTests
 
         var act = () => services.AddAlberto("orders", m => m.WithInMemory());
 
-        act.Should().NotThrow("only Alberto's own marker identifies a registered module key");
+        // only Alberto's own marker identifies a registered module key
+        act();
     }
 }

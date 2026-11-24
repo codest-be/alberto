@@ -1,5 +1,4 @@
 using Alberto.Tenancy;
-using FluentAssertions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
@@ -14,7 +13,7 @@ public class ShardHealthTests
     public void A_shard_nothing_has_reported_on_is_healthy()
     {
         // Only failures report, so silence is the normal case and must not read as an outage.
-        new ShardHealth().Get("db1").Healthy.Should().BeTrue();
+        Assert.True(new ShardHealth().Get("db1").Healthy);
     }
 
     [Fact]
@@ -25,9 +24,9 @@ public class ShardHealthTests
         health.Report("db1", new InvalidOperationException("connection refused"));
 
         var state = health.Get("db1");
-        state.Healthy.Should().BeFalse();
-        state.LastError.Should().Be("connection refused");
-        health.Unhealthy.Should().Equal("db1");
+        Assert.False(state.Healthy);
+        Assert.Equal("connection refused", state.LastError);
+        Assert.Equal(["db1"], health.Unhealthy);
     }
 
     [Fact]
@@ -38,9 +37,9 @@ public class ShardHealthTests
 
         health.Report("db1", null);
 
-        health.Get("db1").Healthy.Should().BeTrue();
-        health.Get("db1").LastError.Should().BeNull();
-        health.Unhealthy.Should().BeEmpty();
+        Assert.True(health.Get("db1").Healthy);
+        Assert.Null(health.Get("db1").LastError);
+        Assert.Empty(health.Unhealthy);
     }
 
     [Fact]
@@ -56,8 +55,8 @@ public class ShardHealthTests
         time.Advance(TimeSpan.FromMinutes(5));
         health.Report("db1", new InvalidOperationException("still broken"));
 
-        health.Get("db1").LastChangedAt.Should().Be(brokenAt);
-        health.Get("db1").LastError.Should().Be("still broken");
+        Assert.Equal(brokenAt, health.Get("db1").LastChangedAt);
+        Assert.Equal("still broken", health.Get("db1").LastError);
     }
 
     [Fact]
@@ -71,7 +70,7 @@ public class ShardHealthTests
         time.Advance(TimeSpan.FromMinutes(5));
         health.Report("db1", null);
 
-        health.Get("db1").LastChangedAt.Should().Be(brokenAt + TimeSpan.FromMinutes(5));
+        Assert.Equal(brokenAt + TimeSpan.FromMinutes(5), health.Get("db1").LastChangedAt);
     }
 
     [Fact]
@@ -81,8 +80,9 @@ public class ShardHealthTests
 
         health.Report("db1", new InvalidOperationException("down"));
 
-        health.Get("db2").Healthy.Should().BeTrue();
-        health.All.Should().ContainKey("db1").And.NotContainKey("db2");
+        Assert.True(health.Get("db2").Healthy);
+        Assert.Contains("db1", health.All);
+        Assert.DoesNotContain("db2", health.All);
     }
 
     [Fact]
@@ -90,7 +90,7 @@ public class ShardHealthTests
     {
         var result = await Check(new ShardHealth());
 
-        result.Status.Should().Be(HealthStatus.Healthy);
+        Assert.Equal(HealthStatus.Healthy, result.Status);
     }
 
     [Fact]
@@ -103,10 +103,10 @@ public class ShardHealthTests
 
         var result = await Check(health);
 
-        result.Status.Should().Be(HealthStatus.Degraded);
-        result.Description.Should().Contain("db1");
-        result.Data["db1"].Should().Be("connection refused");
-        result.Data["db2"].Should().Be("healthy");
+        Assert.Equal(HealthStatus.Degraded, result.Status);
+        Assert.Contains("db1", result.Description);
+        Assert.Equal("connection refused", result.Data["db1"]);
+        Assert.Equal("healthy", result.Data["db2"]);
     }
 
     [Fact]
@@ -116,7 +116,7 @@ public class ShardHealthTests
         health.Report("db1", new InvalidOperationException("down"));
         health.Report("db2", new InvalidOperationException("down"));
 
-        (await Check(health)).Status.Should().Be(HealthStatus.Unhealthy);
+        Assert.Equal(HealthStatus.Unhealthy, (await Check(health)).Status);
     }
 
     private static Task<HealthCheckResult> Check(ShardHealth health) =>

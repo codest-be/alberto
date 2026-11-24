@@ -161,6 +161,10 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         _runningLoops.TryRemove(processorId, out _);
     }
 
+    /// <summary>The loop for <paramref name="processorId"/> when this replica holds its lease, else null.</summary>
+    internal ControlLoop? HeldLoop(string processorId) =>
+        _runningLoops.TryGetValue(processorId, out var loop) ? loop : null;
+
     public long GetFenceToken(string processorId) =>
         _fenceTokens.TryGetValue(processorId, out var token) ? token : 0;
 
@@ -178,7 +182,9 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         NoteShare(share);
 
         // Try to acquire leases for all processors and start those we get
-        foreach (var loop in _allLoops)
+        if (BatchAcquirer is { } batch)
+            await AcquireAndStartManyAsync(batch, _allLoops, cancellationToken);
+        else foreach (var loop in _allLoops)
         {
             if (_runningLoops.Count >= share) break;
 
@@ -410,7 +416,10 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
             var share = await FairShareAsync(_cts.Token);
             NoteShare(share);
 
-            foreach (var loop in _allLoops)
+            if (BatchAcquirer is { } batch)
+                await AcquireAndStartManyAsync(
+                    batch, _allLoops.Where(l => !_runningLoops.ContainsKey(l.ProcessorId)).ToList(), _cts.Token);
+            else foreach (var loop in _allLoops)
             {
                 if (_cts.IsCancellationRequested) break;
                 // Checked on every acquire: TryAcquireAsync hands a replica back its own
@@ -502,6 +511,58 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         {
             BackgroundSpans.Fail(activity, ex);
             throw;
+        }
+    }
+
+    // One round trip for every candidate, but only while the share is unbounded (rebalancing
+    // off): with a capped share, how many to take depends on how many are won, one by one.
+    private IBatchProcessorLeaseManager? BatchAcquirer =>
+        _rebalancer is null ? _leaseManager as IBatchProcessorLeaseManager : null;
+
+    private async Task AcquireAndStartManyAsync(
+        IBatchProcessorLeaseManager batch, IReadOnlyList<ControlLoop> candidates, CancellationToken cancellationToken)
+    {
+        if (candidates.Count == 0) return;
+
+        IReadOnlyList<IProcessorLease> leases;
+        using (var activity = StartLeaseSpan("alberto.lease.acquire_many"))
+        {
+            activity?.SetTag("alberto.lease.requested", candidates.Count);
+            try
+            {
+                leases = await batch.TryAcquireManyAsync(
+                    _consumerId, candidates.Select(l => l.ProcessorId).ToArray(), _replicaId, cancellationToken);
+                activity?.SetTag("alberto.lease.acquired_count", leases.Count);
+            }
+            catch (Exception ex)
+            {
+                if (!cancellationToken.IsCancellationRequested)
+                    BackgroundSpans.Fail(activity, ex);
+                _logger?.LogWarning(ex, "Failed to acquire leases for {Count} processors", candidates.Count);
+                return;
+            }
+        }
+
+        foreach (var lease in leases)
+        {
+            if (cancellationToken.IsCancellationRequested) break; // the unstarted leases expire
+            if (!_loopsByProcessorId.TryGetValue(lease.ProcessorId, out var loop)) continue;
+            try
+            {
+                // Same order as the single path: forget, token, start, then running.
+                if (_forgetCheckpoint is not null)
+                    await _forgetCheckpoint(lease.ProcessorId, cancellationToken);
+                _logger?.LogInformation(
+                    "Acquired lease for processor {ProcessorId} (expires {ExpiresAt})",
+                    lease.ProcessorId, lease.ExpiresAt);
+                _fenceTokens[lease.ProcessorId] = lease.FenceToken;
+                await loop.StartAsync(cancellationToken);
+                _runningLoops[lease.ProcessorId] = loop;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to start processor {ProcessorId}", lease.ProcessorId);
+            }
         }
     }
 

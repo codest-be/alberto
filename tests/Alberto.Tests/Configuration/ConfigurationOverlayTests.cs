@@ -1,5 +1,4 @@
 using Alberto.Configuration;
-using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 
@@ -25,7 +24,7 @@ public class ConfigurationOverlayTests
 
         var result = AlbertoModuleDefinition.ApplyConfiguration(Definition(), configuration);
 
-        result.ControlLoop.BatchSize.Should().Be(42);
+        Assert.Equal(42, result.ControlLoop.BatchSize);
     }
 
     [Fact]
@@ -33,7 +32,7 @@ public class ConfigurationOverlayTests
     {
         var result = AlbertoModuleDefinition.ApplyConfiguration(Definition(), Configuration());
 
-        result.ControlLoop.BatchSize.Should().Be(500);
+        Assert.Equal(500, result.ControlLoop.BatchSize);
     }
 
     [Fact]
@@ -44,8 +43,8 @@ public class ConfigurationOverlayTests
 
         var result = AlbertoModuleDefinition.ApplyConfiguration(Definition(), configuration);
 
-        result.ControlLoop.PollingInterval.Should().Be(TimeSpan.FromMilliseconds(50));
-        result.ControlLoop.BatchSize.Should().Be(500);
+        Assert.Equal(TimeSpan.FromMilliseconds(50), result.ControlLoop.PollingInterval);
+        Assert.Equal(500, result.ControlLoop.BatchSize);
     }
 
     [Fact]
@@ -58,10 +57,10 @@ public class ConfigurationOverlayTests
 
         var result = AlbertoModuleDefinition.ApplyConfiguration(Definition(), configuration);
 
-        result.ControlLoop.Retry.MaxRetries.Should().Be(7);
-        result.ControlLoop.Retry.RetryDelay.Should().Be(TimeSpan.FromSeconds(1));
-        result.ControlLoop.Leases.Enabled.Should().BeTrue();
-        result.ControlLoop.Leases.ReplicaId.Should().Be("pod-3");
+        Assert.Equal(7, result.ControlLoop.Retry.MaxRetries);
+        Assert.Equal(TimeSpan.FromSeconds(1), result.ControlLoop.Retry.RetryDelay);
+        Assert.True(result.ControlLoop.Leases.Enabled);
+        Assert.Equal("pod-3", result.ControlLoop.Leases.ReplicaId);
     }
 
     [Fact]
@@ -71,7 +70,7 @@ public class ConfigurationOverlayTests
 
         var result = AlbertoModuleDefinition.ApplyConfiguration(Definition(), configuration);
 
-        result.ControlLoop.BatchSize.Should().Be(500);
+        Assert.Equal(500, result.ControlLoop.BatchSize);
     }
 
     [Fact]
@@ -83,7 +82,7 @@ public class ConfigurationOverlayTests
 
         var result = AlbertoModuleDefinition.ApplyConfiguration(Definition(), configuration);
 
-        result.Telemetry.Enabled.Should().BeFalse();
-        result.Checkpoints.OrphanPolicy.Should().Be(OrphanCheckpointPolicy.Strict);
+        Assert.False(result.Telemetry.Enabled);
+        Assert.Equal(OrphanCheckpointPolicy.Strict, result.Checkpoints.OrphanPolicy);
     }
 }

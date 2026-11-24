@@ -17,6 +17,101 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.17.0] - 2026-11-24
+
+Inline projections now mean one thing on every backend: they run inside the append, in log order,
+and a throw aborts the append. Upgrade carefully if you wrote your own inline projection or event
+store backend, or caught `InlineProjectionExhaustedException`. No migrations.
+
+### Breaking changes
+
+- Every inline projection now runs inside the append, under the backend's append lock, before the events become visible, in log order. A throw aborts the append: no events are stored and no position is consumed. There is no post-commit inline path any more; work that must happen after commit belongs in an `IPostAppendHandler` or a reactor (#301)
+  - `IInlineProjection` has one method, `ProcessAsync(events, AppendTransaction transaction, ct)`. Replace `ProcessAsync(events, ct)`, and fold any `ITransactionalInlineProjection.ProcessInTransactionAsync` into it. `ITransactionalInlineProjection` is gone.
+  - `IEventStoreBackend` now requires `AppendAsync(events, dcbQuery, expectedPosition, inTransaction, ct)`: run `inTransaction` under your append lock before the events become visible, and discard the append if it throws. `ITransactionalEventStoreBackend` and `SupportsAppendTransaction` are gone.
+  - `AppendTransaction.Connection` and `Transaction` are nullable. `AppendTransaction.None` (both null) means the backend has no database transaction, which is what the in-memory backend hands over; write on your own connection then.
+  - Inline EF projections no longer retry and `InlineProjectionExhaustedException` is gone. A write conflict fails the append and the caller retries the command; catch the original exception from `AppendAsync`.
+- The in-memory backend now runs inline projections before it publishes the events, so tests on `AlbertoTestHarness` see Postgres semantics: log order across concurrent appends, and a throwing projection fails the append and leaves no events. Appends to one in-memory backend wait for an in-flight inline step, and an inline step that appends to the same in-memory backend waits until its token is cancelled. Reads and the head are never blocked. Writes a projection already saved on its own context are not rolled back when the append aborts (#300)
+
+### Fixed
+
+- An inline EF projection of a document with an owned collection threw `InvalidOperationException` ("The value of shadow key property ... is unknown") on any update or delete of an existing document. Inline and async EF projections now write with one recipe: tracked load by document and rebuild version, then copy values and owned navigations, with deletes winning (#299)
+
+### Documentation
+
+- `docs/projections.md`, `concepts.md`, `operations.md` and `migrating-to-1.0.md` describe the single in-append inline contract (#297)
+
+---
+
+## [0.16.1] - 2026-11-24
+
+Two fixes for processors on Postgres. Upgrade if you append from several tenants at once or run
+processors with leases. No migrations, no API changes.
+
+### Fixed
+
+- Under concurrent appends from several tenants, a committed event could be passed by every caught-up processor and never projected or reacted to, with nothing behind, faulted or dead-lettered. The head proved a gap in the log permanent against the snapshot's `xmax`, which Postgres sets to the newest *completed* transaction id plus one, so an open append with a newer id was invisible to the proof. When it sees a gap, the head now bounds the proof by its own transaction id, and stays below the gap until every append that could fill it has ended. A head poll that sees a gap now takes one transaction id; polls without a gap are unchanged. Affects 0.15.x and 0.16.0 (#294)
+- With leases on, a processor's dead-letter retries now run only on the replica that holds its lease, and between its live dispatches there, never beside one. Before, every replica claimed and ran them, so a retry could run beside a live event for the same processor. A replica that loses the lease leaves its claimed entries for the new holder once their claim lease expires. With leases off nothing changes (#290)
+
+---
+
+## [0.16.0] - 2026-11-23
+
+Inline EF projections now run inside the append's transaction, so they are in log order and
+atomic with the events. New processors can start without replaying the log, and one reactor can
+handle several event types. No migrations.
+
+### Breaking
+
+For inline EF projections (`ProjectionMode.Inline`) on Postgres:
+
+- A projection that throws now rolls the append back. Before, the events were committed and the caller got the exception afterwards.
+- The projection's DbContext must be in the event store's database, and must not use `EnableRetryOnFailure` (EF refuses a retrying strategy inside a transaction it did not start). Either one throws on the first inline run, naming the fix: change the context, or use `ProjectionMode.Async`.
+- A hand-written `ITransactionalInlineProjection` that swallows a database error fails the append with `InvalidOperationException` rather than having it roll back silently.
+- Appends in one tenant are serialised while inline projections run, so keep inline projections small. The in-memory backend and backends without `ITransactionalEventStoreBackend` keep the after-commit path.
+
+### Fixed
+
+- Inline projections no longer lose an event when two appends for one document project out of order (#285), and a crash between the append and its inline projection no longer leaves the row behind, because there is no such window any more (#286)
+
+### Added
+
+- `ProcessorExecutionOptions.StartFrom`: `ProcessorStart.Head` skips the log, and `ProcessorStart.CheckpointOf(ids)` continues from the lowest of those processors' checkpoints, for a rename or merge. The old rows stay for rollback and count as claimed in the orphan check. Set in code only (#283)
+- `React<THandler>(r => r.On<A>().On<B>())`: one reactor for several event types, under one processor id and lease, in log order (#284)
+
+---
+
+## [0.15.2] - 2026-11-22
+
+### Changed
+
+- **Telemetry:** a command passed as an anonymous object is now named after its member names in
+  the `alberto.command {CommandType}` span and the `alberto.command.type` tag, as
+  `{ clientId, therapistId }`, instead of the compiler's `<>f__AnonymousTypeN`. Property values
+  never appear in the name. Named commands keep their type name. (#276)
+
+---
+
+## [0.15.1] - 2026-11-19
+
+Fewer database round trips and scans on the append, checkpoint, lease, polling, projection and
+outbox paths. No public API changes. Upgrading runs migrations 009 to 013. Two of them build an
+index without `CONCURRENTLY` (noted below). A replica still on 0.15.0 keeps working against the
+migrated schema during a rolling deploy.
+
+### Changed
+
+- An append whose condition names both event types and tags checks for conflicts only above the expected position; it no longer scans every matching event. Conflict semantics are unchanged (migration 009) (#266)
+- Checkpoint flush, checkpoint resync and lease acquisition are one statement each, not one round trip per processor. Reset detection is part of the fenced write, and a lease attempt that loses no longer draws a fence token. With `Leases.Rebalance` on, acquisition is still one statement per processor (#267)
+- A processor with no matching events skips its read and moves its checkpoint forward from the head snapshot, typed reads are driven from `alberto_event_type_positions`, and idle loops back off to 1 s while LISTEN is healthy. On a multi-tenant store, migration 010 adds an index on that table without `CONCURRENTLY`, which blocks writes to the table while it builds (#268)
+- Append returns only position and timestamp from the database and builds the envelopes from the events it sent. Migration 011 adds `_lean` append functions next to the originals. On a multi-tenant store a known tenant's `alberto_tenants` row is no longer rewritten on every append, so `last_seen_at` can be up to a minute behind (#269)
+- `PostgresStateStore` writes a batch in one upsert and one delete, `ListRecentAsync` is served in order by an index (migration 012, built without `CONCURRENTLY`), `EfStateStore` reads a batch's rows once, and a discarded rebuild version is deleted in batches of 5000. Rebuild replay has its own batch size, `ControlLoop:Rebuilds:BatchSize`, default 1000 (#270)
+- The outbox relay records a batch's failed deliveries in one statement, after the batch or once half the claim lease has elapsed, and wakes as soon as the `OutboxHandler` in the same process enqueues. An idle relay backs off up to 5 s, so an entry written by another process can wait that long where it waited one `PollingInterval`. Dead-letter retry does one read per module per interval, and only processors with a dead letter due claim. Migration 013 adds a partial index on `failed` outbox rows and drops `idx_alberto_dead_letter_processor`, which the unique `(processor_id, event_id)` index already covers (#271)
+- On a sharded module with no default shard, the refusal of an unknown tenant id is cached for 5 s; it no longer costs one control-database read per request. A tenant assigned by another process resolves up to 5 s later on a replica that cached the refusal (#272)
+- Internal: the projection fold, the retry and dead-letter tail and the in-memory DCB match each have one implementation. `DeadLettered`, `DeadLetterStored` and `DeadLetteredCount` on the consume contexts are set after the dead-letter store write, not before (#263)
+- Internal: the in-memory backend has one checkpoint store, the fenced one, which `.WithInMemory()` already used (#274)
+
+---
+
 ## [0.15.0] - 2026-11-18
 
 ### Changed
@@ -1126,7 +1221,12 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/codest-be/alberto/compare/v0.16.1...v0.17.0
+[0.16.1]: https://github.com/codest-be/alberto/compare/v0.16.0...v0.16.1
+[0.16.0]: https://github.com/codest-be/alberto/compare/v0.15.2...v0.16.0
+[0.15.2]: https://github.com/codest-be/alberto/compare/v0.15.1...v0.15.2
+[0.15.1]: https://github.com/codest-be/alberto/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/codest-be/alberto/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/codest-be/alberto/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/codest-be/alberto/compare/v0.12.0...v0.13.0

@@ -5,7 +5,6 @@ using Alberto.Projections;
 using Alberto.Subscriptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace Alberto.EntityFramework;
 
@@ -36,7 +35,7 @@ public static class EfConsumerBuilderExtensions
     /// <param name="mode">
     /// <see cref="ProjectionMode.Async"/> (default) registers a polling-consumer processor and a
     /// rebuildable state clearer. <see cref="ProjectionMode.Inline"/> registers an
-    /// <see cref="IInlineProjection"/> that runs immediately after each append.
+    /// <see cref="IInlineProjection"/> that runs inside each append, in the append's transaction.
     /// </param>
     /// <param name="documentIds">
     /// Required on a module that declared <c>.WithTenancy()</c> — see
@@ -91,8 +90,7 @@ public static class EfConsumerBuilderExtensions
                     return new DeclaredEfInlineProjection<TEntity, TDbContext>(
                         declaration,
                         contextFactory,
-                        version,
-                        sp.GetService<ILogger<DeclaredEfInlineProjection<TEntity, TDbContext>>>());
+                        version);
                 });
             });
         }

@@ -25,6 +25,9 @@ internal sealed class PostgresProjectionRebuildStore :
         "rebuild_started_at, rebuild_target_position, rebuild_completed_at, " +
         "last_allocated_version, requested_action";
 
+    /// <summary>Rows deleted per statement when a discarded version is reclaimed.</summary>
+    internal const int DiscardBatchSize = 5000;
+
     private readonly NpgsqlDataSource _dataSource;
     private readonly SchemaQualifier _schema;
 
@@ -328,19 +331,29 @@ internal sealed class PostgresProjectionRebuildStore :
 
         await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
 
-        // Its own transaction, and deliberately not the one that flipped the version: a delete
-        // is all this is, and nothing reads the rows it removes. Spans all tenants — a rebuild
-        // is a schema-level operation, not a per-tenant one.
+        // Not the transaction that flipped the version: a delete is all this is, and nothing
+        // reads the rows it removes. Spans all tenants — a rebuild is a schema-level operation,
+        // not a per-tenant one.
+        //
+        // In bounded batches, each its own autocommitted statement, so a large projection is not
+        // one long transaction and one WAL burst. The loop runs until a batch deletes nothing,
+        // not until one comes back short: every replica sweeps, and a batch that lost some of
+        // its rows to another replica's delete is short while rows remain. The coordinator does
+        // not revisit a version it has swept, so stopping there would strand them. The table has
+        // no surrogate key and its primary key depends on tenancy, so rows are picked by ctid.
         await using var cmd = new NpgsqlCommand(
             $"""
             DELETE FROM {StatesTable}
-            WHERE projection_type = @projection_type AND rebuild_version = @version
+            WHERE ctid = ANY(ARRAY(
+                SELECT ctid FROM {StatesTable}
+                WHERE projection_type = @projection_type AND rebuild_version = @version
+                LIMIT {DiscardBatchSize}))
             """, conn);
 
         cmd.Parameters.AddWithValue("projection_type", projectionType);
         cmd.Parameters.AddWithValue("version", version);
 
-        await cmd.ExecuteNonQueryAsync(cancellationToken);
+        while (await cmd.ExecuteNonQueryAsync(cancellationToken) > 0) { }
     }
 
     private static ProjectionRebuildState Map(NpgsqlDataReader reader) => new(

@@ -2,7 +2,6 @@ using System.Data.Common;
 using Alberto.Projections;
 using Alberto.Telemetry;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Alberto.EntityFramework;
 
@@ -21,7 +20,7 @@ namespace Alberto.EntityFramework;
 /// </remarks>
 /// <typeparam name="TEntity">The entity type implementing <see cref="IProjectionEntity"/>.</typeparam>
 /// <typeparam name="TDbContext">The DbContext type containing the entity DbSet.</typeparam>
-public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IAsyncDisposable
+public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IStateStoreBatchFold<TEntity>, IAsyncDisposable
     where TEntity : class, IProjectionEntity, new()
     where TDbContext : DbContext
 {
@@ -107,7 +106,15 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
 
         // Resolved once for the whole batch, so a promotion landing mid-batch cannot split
         // attempts, upserts, and deletes across two versions.
-        var version = _rebuildVersion.Current;
+        await WriteWithRetriesAsync(upserts, deletes, _rebuildVersion.Current, cancellationToken);
+    }
+
+    private async Task WriteWithRetriesAsync(
+        IReadOnlyDictionary<string, TEntity> upserts,
+        IReadOnlyCollection<string> deletes,
+        int version,
+        CancellationToken cancellationToken)
+    {
         var delay = TimeSpan.FromMilliseconds(50);
 
         for (var attempt = 1; attempt <= MaxWriteAttempts; attempt++)
@@ -131,6 +138,52 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
     }
 
     /// <summary>
+    /// Reads the batch's rows once, tracked, and writes the fold's outcome through the same
+    /// context, instead of <see cref="LoadManyAsync"/> followed by the tracked re-read in
+    /// <see cref="WriteBatchOnceAsync"/>. A conflict falls back to the retry loop behind
+    /// <see cref="ApplyChangesAsync"/>, which re-reads per attempt exactly as before.
+    /// </summary>
+    async Task<bool> IStateStoreBatchFold<TEntity>.LoadFoldApplyAsync(
+        IReadOnlyList<string> documentIds,
+        Func<IReadOnlyDictionary<string, TEntity>, (IReadOnlyDictionary<string, TEntity> Upserts, IReadOnlyCollection<string> Deletes)> fold,
+        CancellationToken cancellationToken)
+    {
+        var version = _rebuildVersion.Current;
+
+        IReadOnlyDictionary<string, TEntity> upserts = new Dictionary<string, TEntity>();
+        IReadOnlyCollection<string> deletes = [];
+
+        await using (var context = await _contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            try
+            {
+                var outcome = await EfProjectionWriter.LoadFoldSaveAsync<TEntity>(
+                    context,
+                    version,
+                    documentIds,
+                    existing =>
+                    {
+                        (upserts, deletes) = fold(existing);
+                        return (upserts, deletes);
+                    },
+                    cancellationToken);
+
+                if (outcome.Saved)
+                    return true;
+                if (outcome.NothingToWrite)
+                    return false;
+            }
+            catch (Exception ex) when (IsRetryableConflict(ex))
+            {
+                AlbertoMetrics.ConcurrencyConflicts.Add(1, new KeyValuePair<string, object?>("kind", "projection"));
+            }
+        }
+
+        await WriteWithRetriesAsync(upserts, deletes, version, cancellationToken);
+        return true;
+    }
+
+    /// <summary>
     /// Applies the complete change set in one fresh context. Each retry calls this method again,
     /// so no tracked state or partial fallback path can leak between attempts.
     /// </summary>
@@ -141,61 +194,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
         CancellationToken cancellationToken)
     {
         await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        var allDocIds = upserts.Keys.Concat(deletes).Distinct().ToList();
-        var existingEntities = await context.Set<TEntity>()
-            .IgnoreQueryFilters([ProjectionQueryFilters.ActiveVersion])
-            .Where(e => allDocIds.Contains(e.DocumentId) && e.RebuildVersion == version)
-            .ToDictionaryAsync(e => e.DocumentId, cancellationToken);
-
-        // Delete-wins: a document ID present in both upserts and deletes must be absent
-        // after the batch. EF cannot express "insert then delete in one statement" the way
-        // the Postgres adapter does (upsert SQL followed by delete SQL in one transaction),
-        // so the same result is achieved by suppressing any upsert whose ID is also being
-        // deleted — the delete then runs uncontested, whether the row exists or not.
-        var deleteSet = deletes.Count > 0 ? new HashSet<string>(deletes) : null;
-
-        foreach (var docId in deletes)
-        {
-            if (existingEntities.TryGetValue(docId, out var existing))
-                context.Set<TEntity>().Remove(existing);
-        }
-
-        foreach (var (docId, newEntity) in upserts)
-        {
-            if (deleteSet?.Contains(docId) == true)
-                continue; // delete wins; skip the upsert for this document
-
-            ProjectionEntityStamp.DocumentId(newEntity, docId);
-            ProjectionEntityStamp.RebuildVersion(newEntity, version);
-            ProjectionEntityStamp.UpdatedAt(newEntity, DateTimeOffset.UtcNow);
-
-            if (existingEntities.TryGetValue(docId, out var existing))
-            {
-                context.Entry(existing).CurrentValues.SetValues(newEntity);
-                CopyOwnedNavigations(context.Entry(existing), newEntity);
-            }
-            else
-            {
-                context.Set<TEntity>().Add(newEntity);
-            }
-        }
-
-        await context.SaveChangesAsync(cancellationToken);
-    }
-
-    /// <summary>
-    /// Copies owned-navigation values from <paramref name="source"/> onto a tracked entry in
-    /// one reflection pass.
-    /// </summary>
-    private static void CopyOwnedNavigations(EntityEntry<TEntity> trackedEntry, TEntity source)
-    {
-        foreach (var nav in trackedEntry.Navigations
-                     .Where(n => n.Metadata.TargetEntityType.IsOwned()))
-        {
-            var propInfo = typeof(TEntity).GetProperty(nav.Metadata.Name);
-            if (propInfo != null)
-                nav.CurrentValue = propInfo.GetValue(source);
-        }
+        await EfProjectionWriter.WriteAsync(context, version, upserts, deletes, cancellationToken);
     }
 
     /// <summary>

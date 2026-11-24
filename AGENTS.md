@@ -100,7 +100,7 @@ dotnet run -c Release --project benchmarks/Alberto.Benchmarks -- --filter '*Appe
 There is no operator tool and no admin API. Operators resolve the core interfaces from DI by module key (or `ShardKey.Compose(moduleKey, shardId)` on a sharded module) and call them; inspection is plain SQL. [docs/operations.md](docs/operations.md) is the reference. The CLI and the parked `Alberto.Admin` projects were removed; they remain in git history, and `feature/admin-surface` no longer merges cleanly.
 
 - **Per-processor mutations**: `ICheckpointStore` (`SaveAsync`, `ResetAsync`, `RewindAsync`), `IDeadLetterStore` (`GetAsync`, `CountAsync`, `ClearAsync`, `MarkForRetryAsync`), `IProjectionRebuildStore`, `ITenantShardMap` (`AssignAsync` is first-writer-wins) and `IOutboxStore` (`RetryFailedAsync`, `PurgeDeliveredAsync`).
-- `SaveAsync` is monotonic by design (`GREATEST`). `RewindAsync` is the deliberate escape hatch for operator-initiated rewinds and is the only way to move a checkpoint backwards. A processor rename is `SaveAsync` of the new id at the old position, then `ResetAsync` (which deletes the row) of the old id.
+- `SaveAsync` is monotonic by design (`GREATEST`). `RewindAsync` is the deliberate escape hatch for operator-initiated rewinds and is the only way to move a checkpoint backwards. A processor rename or merge is `StartFrom = ProcessorStart.CheckpointOf(oldIds)` on the new id; the old rows stay for rollback and count as claimed in the orphan check.
 - **No composite mutations**: releasing tenant leases is a SQL `DELETE` (or waiting out `LeaseDuration`), and retry-by-rewind is `RewindAsync` then `ClearAsync`, which is not one transaction.
 
 ## Technology Stack
@@ -111,7 +111,7 @@ There is no operator tool and no admin API. Operators resolve the core interface
 | Database | PostgreSQL (Npgsql 10.0.3) |
 | Migrations | DbUp-PostgreSQL 7.0.1 (event store), EF Core 10.0.15 on both targets (`Alberto.EntityFramework`); stays 10.x until the Npgsql EF provider ships 11.0.0 GA |
 | Observability | OpenTelemetry 1.21.0 |
-| Testing | xUnit v3 3.2.2, FluentAssertions 8.11.0, Testcontainers 4.16.0 |
+| Testing | xUnit v3 3.2.2, Testcontainers 4.16.0 |
 
 ## Package Management
 

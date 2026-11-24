@@ -2,7 +2,6 @@ using System.Text.Json;
 using Alberto.Configuration;
 using Alberto.InMemory;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
@@ -119,7 +118,7 @@ public sealed class ControlLoopLifecycleMutationTests
     public async Task Cancel_CancelsTheRunningLoopsToken()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync([CreateEvent("cancel-me")],
             cancellationToken: TestContext.Current.CancellationToken);
@@ -173,7 +172,7 @@ public sealed class ControlLoopLifecycleMutationTests
     public void Cancel_BeforeStart_DoesNotThrow()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var head = new EventStoreHead(backend, refreshInterval: TimeSpan.FromMilliseconds(10));
         var processor = new DelegatingProcessor("cancel-before-start", (_, _) => Task.CompletedTask);
 
@@ -185,7 +184,7 @@ public sealed class ControlLoopLifecycleMutationTests
 
         var act = loop.Cancel;
 
-        act.Should().NotThrow();
+        act();
     }
 
     // ── StopAsync: drain-timeout warning log ────────────────────────────────────
@@ -199,7 +198,7 @@ public sealed class ControlLoopLifecycleMutationTests
     public async Task StopAsync_AbandonedDrain_LogsWarning()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync([CreateEvent("stuck")],
             cancellationToken: TestContext.Current.CancellationToken);
@@ -235,7 +234,7 @@ public sealed class ControlLoopLifecycleMutationTests
             await loop.StopAsync(CancellationToken.None)
                 .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
-            logger.Entries.Should().Contain(e =>
+            Assert.Contains(logger.Entries, e =>
                 e.Level == LogLevel.Warning &&
                 e.Message.Contains("did not drain", StringComparison.OrdinalIgnoreCase) &&
                 e.Message.Contains("stop-log"));
@@ -260,7 +259,7 @@ public sealed class ControlLoopLifecycleMutationTests
     public async Task DisposeAsync_CleanDrain_DisposesProcessorOnceAndIsIdempotent()
     {
         var backend = new InMemoryEventStoreBackend(); // no events — loop just idles and polls
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var processor = new DisposableProcessor("dispose-clean");
 
         var head = new EventStoreHead(backend, refreshInterval: TimeSpan.FromMilliseconds(10));
@@ -281,10 +280,10 @@ public sealed class ControlLoopLifecycleMutationTests
         await loop.DisposeAsync().AsTask()
             .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
-        processor.DisposeCount.Should().Be(1);
+        Assert.Equal(1, processor.DisposeCount);
 
         await loop.DisposeAsync(); // second call: no-op, not a double dispose
-        processor.DisposeCount.Should().Be(1);
+        Assert.Equal(1, processor.DisposeCount);
 
         await head.StopAsync(CancellationToken.None);
     }
@@ -302,7 +301,7 @@ public sealed class ControlLoopLifecycleMutationTests
     public async Task DisposeAsync_AbandonedDrain_DefersProcessorDisposalUntilLoopExits()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync([CreateEvent("stuck")],
             cancellationToken: TestContext.Current.CancellationToken);
@@ -339,18 +338,18 @@ public sealed class ControlLoopLifecycleMutationTests
                 .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
             // The handler is still stuck — disposal must NOT have happened yet.
-            processor.DisposeCount.Should().Be(0);
+            Assert.Equal(0, processor.DisposeCount);
 
             // Give the (would-be, if broken) background continuation a window to run early.
             await Task.Delay(150, TestContext.Current.CancellationToken);
-            processor.DisposeCount.Should().Be(0);
+            Assert.Equal(0, processor.DisposeCount);
 
             // Now let the handler finish; the loop exits and the deferred continuation disposes
             // the processor — exactly once.
             release.TrySetResult();
             await WaitForAsync(() => processor.DisposeCount == 1, TestContext.Current.CancellationToken);
             await Task.Delay(50, TestContext.Current.CancellationToken); // no late double-dispose
-            processor.DisposeCount.Should().Be(1);
+            Assert.Equal(1, processor.DisposeCount);
 
             await head.StopAsync(CancellationToken.None);
         }

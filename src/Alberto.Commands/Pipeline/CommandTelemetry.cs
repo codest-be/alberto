@@ -121,3 +121,46 @@ internal static class CommandTelemetry
         activity.SetStatus(ActivityStatusCode.Error);
     }
 }
+
+/// <summary>
+/// The name a command's span and <c>alberto.command.type</c> carry: the command type's name, or,
+/// for an anonymous command (whose type name is <c>&lt;&gt;f__AnonymousTypeN</c>, numbered per
+/// build), its member names, as <c>{ clientId, therapistId }</c>. Names only, never values:
+/// command content can be clinical data, and values would multiply span names.
+/// </summary>
+/// <remarks>
+/// The member names come from the anonymous type's generic parameters, which the C# compiler
+/// names <c>&lt;member&gt;j__TPar</c>. That needs no member reflection, so it is trim-safe.
+/// When the names are not there (another compiler, stripped metadata) the type name stands.
+/// </remarks>
+internal static class CommandName<TCommand>
+{
+    internal static readonly string Value = Of(typeof(TCommand));
+
+    private static string Of(Type type)
+    {
+        if (!type.Name.StartsWith("<>f__AnonymousType", StringComparison.Ordinal))
+            return type.Name;
+        if (!type.IsGenericType)
+            return "{ }";
+
+        try
+        {
+            var members = new List<string>();
+            foreach (var parameter in type.GetGenericTypeDefinition().GetGenericArguments())
+            {
+                var name = parameter.Name;
+                var close = name.IndexOf('>');
+                if (!name.StartsWith('<') || close < 2)
+                    return type.Name;
+                members.Add(name[1..close]);
+            }
+
+            return $"{{ {string.Join(", ", members)} }}";
+        }
+        catch (Exception)
+        {
+            return type.Name;
+        }
+    }
+}

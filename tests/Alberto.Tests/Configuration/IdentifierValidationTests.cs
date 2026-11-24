@@ -1,7 +1,7 @@
+using System.Text.RegularExpressions;
 using Alberto;
 using Alberto.InMemory;
 using Alberto.Tenancy;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -48,8 +48,7 @@ public class IdentifierValidationTests
     [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     public void Valid_identifiers_are_accepted(string value)
     {
-        IdentifierRules.IsValidIdentifier(value).Should().BeTrue(
-            "'{0}' satisfies ^[a-z][a-z0-9_]{{0,62}}$", value);
+        Assert.True(IdentifierRules.IsValidIdentifier(value), $"'{value}' satisfies ^[a-z][a-z0-9_]{{0,62}}$");
     }
 
     [Theory]
@@ -65,8 +64,7 @@ public class IdentifierValidationTests
     [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     public void Invalid_identifiers_are_rejected(string? value)
     {
-        IdentifierRules.IsValidIdentifier(value).Should().BeFalse(
-            "'{0}' does not satisfy ^[a-z][a-z0-9_]{{0,62}}$", value);
+        Assert.False(IdentifierRules.IsValidIdentifier(value), $"'{value}' does not satisfy ^[a-z][a-z0-9_]{{0,62}}$");
     }
 
     // ── IdentifierRules.IsValidProcessorId ────────────────────────────────────────────────
@@ -85,8 +83,7 @@ public class IdentifierValidationTests
     [InlineData("order-summary")]
     public void Valid_processor_ids_are_accepted(string processorId)
     {
-        IdentifierRules.IsValidProcessorId(processorId).Should().BeTrue(
-            "'{0}' does not contain ':' or '#' and is not a reserved word", processorId);
+        Assert.True(IdentifierRules.IsValidProcessorId(processorId), $"'{processorId}' does not contain ':' or '#' and is not a reserved word");
     }
 
     [Theory]
@@ -100,8 +97,7 @@ public class IdentifierValidationTests
     [InlineData("tenant-raw")]       // shadows {moduleKey}:tenant-raw — the raw tenant backend key
     public void Invalid_processor_ids_are_rejected(string? processorId)
     {
-        IdentifierRules.IsValidProcessorId(processorId).Should().BeFalse(
-            "'{0}' is null/whitespace, contains ':' or '#', or is a reserved word", processorId);
+        Assert.False(IdentifierRules.IsValidProcessorId(processorId), $"'{processorId}' is null/whitespace, contains ':' or '#', or is a reserved word");
     }
 
     [Fact]
@@ -109,9 +105,9 @@ public class IdentifierValidationTests
     {
         // The reserved set is the source of truth; this test pins it so a refactor that
         // accidentally adds or removes an entry fails immediately rather than silently.
-        IdentifierRules.ReservedProcessorIds.Should().BeEquivalentTo(
-            new[] { "consumer", "catalog", "tenant-raw" },
-            "these are the three suffixes Alberto composes as '{moduleKey}:{suffix}' for its own DI registrations");
+        // these are the three suffixes Alberto composes as '{moduleKey}:{suffix}' for its own DI
+        // registrations
+        Assert.Equivalent(new[] { "consumer", "catalog", "tenant-raw" }, IdentifierRules.ReservedProcessorIds, strict: true);
     }
 
     // ── Module key validation at AddAlberto time ──────────────────────────────────────────
@@ -122,7 +118,8 @@ public class IdentifierValidationTests
         var services = new ServiceCollection();
         var act = () => services.AddAlberto("orders", m => m.WithInMemory());
 
-        act.Should().NotThrow("'orders' satisfies the strict identifier rule");
+        // 'orders' satisfies the strict identifier rule
+        act();
     }
 
     [Theory]
@@ -136,9 +133,9 @@ public class IdentifierValidationTests
         var services = new ServiceCollection();
         var act = () => services.AddAlberto(moduleKey, m => m.WithInMemory());
 
-        act.Should().Throw<ArgumentException>()
-            .WithParameterName("moduleKey")
-            .WithMessage($"*'{moduleKey}'*");
+        var exception = Assert.ThrowsAny<ArgumentException>(act);
+        Assert.Equal("moduleKey", exception.ParamName);
+        Assert.Contains($"'{moduleKey}'", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -149,11 +146,11 @@ public class IdentifierValidationTests
 
         // The error must (a) name the rejected key so the user can spot the typo, and
         // (b) cite the rule so the user knows what to change it to.
-        var exception = act.Should().Throw<ArgumentException>().Which;
-        exception.Message.Should().Contain("'My#Module'",
-            "the error must name the rejected key verbatim");
-        exception.Message.Should().Contain(IdentifierRules.Rule,
-            "the error must state the rule so the user knows what to change the key to");
+        var exception = Assert.ThrowsAny<ArgumentException>(act);
+        // the error must name the rejected key verbatim
+        Assert.Contains("'My#Module'", exception.Message);
+        // the error must state the rule so the user knows what to change the key to
+        Assert.Contains(IdentifierRules.Rule, exception.Message);
     }
 
     // ── Processor id validation at ReactTo time ───────────────────────────────────────────
@@ -170,7 +167,8 @@ public class IdentifierValidationTests
                 "order_auditor");
         });
 
-        act.Should().NotThrow("'order_auditor' does not contain ':' or '#' and is not reserved");
+        // 'order_auditor' does not contain ':' or '#' and is not reserved
+        act();
     }
 
     [Theory]
@@ -187,9 +185,9 @@ public class IdentifierValidationTests
                 processorId);
         });
 
-        act.Should().Throw<ArgumentException>()
-            .WithParameterName("processorId")
-            .WithMessage($"*'{processorId}'*reserved*");
+        var exception = Assert.ThrowsAny<ArgumentException>(act);
+        Assert.Equal("processorId", exception.ParamName);
+        Assert.Matches($"(?is)'{Regex.Escape(processorId)}'.*reserved", exception.Message);
     }
 
     [Theory]
@@ -207,8 +205,8 @@ public class IdentifierValidationTests
                 processorId);
         });
 
-        act.Should().Throw<ArgumentException>()
-            .WithParameterName("processorId");
+        var exception = Assert.ThrowsAny<ArgumentException>(act);
+        Assert.Equal("processorId", exception.ParamName);
     }
 
     [Fact]
@@ -224,12 +222,10 @@ public class IdentifierValidationTests
             m.ReactTo<IdentifierProbeEvent, catalog>(h => h.HandleAsync);
         });
 
-        act.Should().Throw<ArgumentException>()
-            .WithParameterName("processorId")
-            .WithMessage("*catalog*")
-            .And.Message.Should().ContainAny(
-                "ProcessorId",
-                "[ProcessorId");
+        var exception = Assert.ThrowsAny<ArgumentException>(act);
+        Assert.Equal("processorId", exception.ParamName);
+        Assert.Contains("catalog", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(new[] { "ProcessorId", "[ProcessorId" }, fragment => exception.Message.Contains(fragment, StringComparison.Ordinal));
     }
 
     // ── TenantContext.IsValidTenantId delegates to IdentifierRules ────────────────────────
@@ -240,7 +236,7 @@ public class IdentifierValidationTests
     [InlineData("t2")]
     public void Valid_tenant_ids_are_accepted(string tenantId)
     {
-        TenantContext.IsValidTenantId(tenantId).Should().BeTrue();
+        Assert.True(TenantContext.IsValidTenantId(tenantId));
     }
 
     [Theory]
@@ -251,7 +247,7 @@ public class IdentifierValidationTests
     [InlineData("tenant:one")]     // colon
     public void Invalid_tenant_ids_are_rejected(string? tenantId)
     {
-        TenantContext.IsValidTenantId(tenantId).Should().BeFalse();
+        Assert.False(TenantContext.IsValidTenantId(tenantId));
     }
 
     [Fact]
@@ -260,7 +256,7 @@ public class IdentifierValidationTests
         // TenantContext.TenantIdRule is the operator-facing wording for invalid tenant IDs
         // It must stay aligned with IdentifierRules.Rule so both
         // code paths tell the operator the same thing.
-        TenantContext.TenantIdRule.Should().Be(IdentifierRules.Rule,
-            "TenantIdRule is a const alias for IdentifierRules.Rule and must never diverge");
+        // TenantIdRule is a const alias for IdentifierRules.Rule and must never diverge
+        Assert.Equal(IdentifierRules.Rule, TenantContext.TenantIdRule);
     }
 }

@@ -1,4 +1,3 @@
-using FluentAssertions;
 using Xunit;
 using Alberto.Append;
 using Alberto.Tests.SampleEvents;
@@ -35,7 +34,7 @@ public class ThirdPartyBackendTests
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>("third_party");
         await backend.AppendAsync([]);
 
-        probe.Calls.Should().Be(1);
-        descriptor.Backend.Appends.Should().Be(1);
+        Assert.Equal(1, probe.Calls);
+        Assert.Equal(1, descriptor.Backend.Appends);
     }
 }

@@ -42,6 +42,12 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
     private CancellationTokenSource? _cts;
     private Task? _loop;
     private int _disposed;
+
+    /// <summary>
+    /// Held around each sequential dispatch, so work run through
+    /// <see cref="TryRunBetweenDispatchesAsync"/> never overlaps one.
+    /// </summary>
+    private readonly SemaphoreSlim _dispatchLock = new(1, 1);
     private bool _faultCleared;
 
     /// <summary>
@@ -197,6 +203,53 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
                 "re-delivered on the next start.",
                 ProcessorId, _drainTimeout);
         }
+
+        // Work run between dispatches was cancelled with the loop; wait for it to leave too, so a
+        // stopped loop (a lost or released lease) has nothing of this processor still running here.
+        try
+        {
+            if (await _dispatchLock.WaitAsync(_drainTimeout, cancellationToken))
+                _dispatchLock.Release();
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    /// <summary>
+    /// Runs <paramref name="work"/> for this processor while the loop runs, and never during one of
+    /// its sequential dispatches. Returns false, without running it or after cancelling it, when the
+    /// loop is not running or stops first. A pipelined loop (<see cref="ProcessorExecutionOptions.MaxConcurrency"/>
+    /// above 1) dispatches concurrently by design, so there the work only waits for other such work.
+    /// </summary>
+    internal async Task<bool> TryRunBetweenDispatchesAsync(
+        Func<CancellationToken, Task> work, CancellationToken cancellationToken)
+    {
+        var running = Volatile.Read(ref _cts);
+        if (running is null)
+            return false;
+
+        CancellationTokenSource linked;
+        try { linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, running.Token); }
+        catch (ObjectDisposedException) { return false; }
+
+        using (linked)
+        {
+            try { await _dispatchLock.WaitAsync(linked.Token); }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { return false; }
+
+            try
+            {
+                await work(linked.Token);
+                return true;
+            }
+            catch (OperationCanceledException) when (running.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                return false;
+            }
+            finally
+            {
+                _dispatchLock.Release();
+            }
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -295,27 +348,33 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
             var inHandler = false;
             try
             {
-                var checkpoint = await _checkpointStore.GetAsync(ProcessorId, cancellationToken) ?? 0L;
+                // Taken before the head is read, so any advance after that read wakes the wait.
+                var headAdvanced = _head.Advanced;
+                var checkpoint = await ReadCheckpointAsync(cancellationToken);
                 var head = _head.Current;
 
                 if (checkpoint >= head)
                 {
                     ReportProgress(0L);
                     infrastructureFailures = 0;
-                    await Task.Delay(_pollingInterval, cancellationToken);
+                    await WaitForHeadAsync(headAdvanced, cancellationToken);
                     continue;
                 }
 
-                var events = await PollAsync(checkpoint, cancellationToken);
+                // When the head has seen none of the handled types since the checkpoint, the read
+                // would come back empty: skip it.
+                var events = _head.HasNoneOf(_processor.HandledEventTypes, checkpoint)
+                    ? []
+                    : await PollAsync(checkpoint, cancellationToken);
 
                 if (events.Count == 0)
                 {
                     // No events between checkpoint and head — skip forward safely
-                    await SaveCheckpointAsync(head, cancellationToken);
+                    await SaveSkipForwardAsync(head, cancellationToken);
                     await ClearFaultOnceAsync(cancellationToken);
                     ReportProgress(0L);
                     infrastructureFailures = 0;
-                    await Task.Delay(_pollingInterval, cancellationToken);
+                    await WaitForHeadAsync(headAdvanced, cancellationToken);
                     continue;
                 }
 
@@ -331,20 +390,28 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
                         relevantEvents.Add(e);
                 }
 
+                await _dispatchLock.WaitAsync(cancellationToken);
                 inHandler = true;
-                if (ShouldUseBatchDispatch && relevantEvents.Count > 0)
+                try
                 {
-                    await DispatchBatchAsync(relevantEvents, cancellationToken);
-                }
-                else
-                {
-                    foreach (var evt in relevantEvents)
+                    if (ShouldUseBatchDispatch && relevantEvents.Count > 0)
                     {
-                        dispatching = evt;
-                        await DispatchAsync(evt, cancellationToken);
+                        await DispatchBatchAsync(relevantEvents, cancellationToken);
                     }
+                    else
+                    {
+                        foreach (var evt in relevantEvents)
+                        {
+                            dispatching = evt;
+                            await DispatchAsync(evt, cancellationToken);
+                        }
 
-                    dispatching = null;
+                        dispatching = null;
+                    }
+                }
+                finally
+                {
+                    _dispatchLock.Release();
                 }
 
                 inHandler = false;
@@ -373,7 +440,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
                 // short one left the checkpoint at the head, where the next pass waits anyway. A
                 // full batch with nothing at or below the head made none, and would spin.
                 if (events.Count == _batchSize && visibleEvents.Count == 0)
-                    await Task.Delay(_pollingInterval, cancellationToken);
+                    await WaitForHeadAsync(headAdvanced, cancellationToken);
             }
             catch (OperationCanceledException ex) when (IsShutdownCancellation(ex, cancellationToken)) { break; }
             catch (Exception ex) when (!inHandler && !cancellationToken.IsCancellationRequested)
@@ -404,7 +471,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
     private async Task RunPipelinedAsync(CancellationToken cancellationToken)
     {
         var maxConcurrency = _executionOptions.MaxConcurrency;
-        var initialCheckpoint = await _checkpointStore.GetAsync(ProcessorId, cancellationToken) ?? 0L;
+        var initialCheckpoint = await ReadCheckpointAsync(cancellationToken);
         var watermark = new PositionWatermark(initialCheckpoint);
         // Not `using`: when the worker drain times out the abandoned workers still hold this
         // token, so disposal is deferred until they actually exit (see the finally block).
@@ -431,6 +498,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
             {
                 try
                 {
+                    var headAdvanced = _head.Advanced;
                     var head = _head.Current;
                     var readPosition = watermark.ReadPosition;
 
@@ -442,18 +510,20 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
                         // last position all workers have confirmed handled, which is the true lag.
                         await SaveWatermarkCheckpointAsync(watermark, pipelineToken);
                         ReportProgress(head - watermark.SafeCheckpoint);
-                        await Task.Delay(_pollingInterval, pipelineToken);
+                        await WaitForHeadAsync(headAdvanced, pipelineToken);
                         continue;
                     }
 
-                    var events = await PollAsync(readPosition, pipelineToken);
+                    var events = _head.HasNoneOf(_processor.HandledEventTypes, readPosition)
+                        ? []
+                        : await PollAsync(readPosition, pipelineToken);
 
                     if (events.Count == 0)
                     {
                         watermark.AdvanceReadPosition(head);
-                        await SaveWatermarkCheckpointAsync(watermark, pipelineToken);
+                        await SaveWatermarkCheckpointAsync(watermark, pipelineToken, skipForward: true);
                         ReportProgress(head - watermark.SafeCheckpoint);
-                        await Task.Delay(_pollingInterval, pipelineToken);
+                        await WaitForHeadAsync(headAdvanced, pipelineToken);
                         continue;
                     }
 
@@ -486,7 +556,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
                     // A full batch with nothing at or below the head made no progress; don't spin.
                     // A short one left the read position at the head, where the next pass waits.
                     if (events.Count == _batchSize && visibleEvents.Count == 0)
-                        await Task.Delay(_pollingInterval, pipelineToken);
+                        await WaitForHeadAsync(headAdvanced, pipelineToken);
                 }
                 catch (Exception ex) when (!pipelineToken.IsCancellationRequested)
                 {
@@ -680,6 +750,59 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
         }
     }
 
+    /// <summary>
+    /// The processor's checkpoint, seeded from <see cref="ProcessorExecutionOptions.StartFrom"/> when
+    /// it has none. Runs under the processor's lease, so the first replica to hold it decides the
+    /// start and every later one reads the saved checkpoint. A rebuild's shadow loop shares the
+    /// declared processor's options but must always replay, so it never seeds.
+    /// </summary>
+    private async Task<long> ReadCheckpointAsync(CancellationToken cancellationToken)
+    {
+        if (await _checkpointStore.GetAsync(ProcessorId, cancellationToken) is { } checkpoint)
+            return checkpoint;
+
+        var start = _executionOptions.StartFrom;
+        if (start.IsBeginning || Projections.RebuildableProjection.IsShadowProcessorId(ProcessorId))
+            return 0L;
+
+        var position = start.AtHead
+            ? await ReadHeadAsync(cancellationToken)
+            : await LowestCheckpointOfAsync(start.TakesOverFrom, cancellationToken);
+
+        await SaveCheckpointAsync(position, cancellationToken);
+        _logger?.LogInformation(
+            "ControlLoop {ProcessorId} had no checkpoint and starts at position {Position} ({Start})",
+            ProcessorId, position, start.AtHead ? "head" : $"checkpoint of {string.Join(", ", start.TakesOverFrom)}");
+        return position;
+    }
+
+    /// <summary>
+    /// The stable head, once the head has actually read the log: a cold head reports 0, and
+    /// seeding from that would replay everything.
+    /// </summary>
+    private async Task<long> ReadHeadAsync(CancellationToken cancellationToken)
+    {
+        while (!_head.HasRead)
+            await WaitForHeadAsync(_head.Advanced, cancellationToken);
+        return _head.Current;
+    }
+
+    private async Task<long> LowestCheckpointOfAsync(IReadOnlyList<string> processorIds, CancellationToken cancellationToken)
+    {
+        var lowest = long.MaxValue;
+        foreach (var id in processorIds)
+        {
+            var position = await _checkpointStore.GetAsync(id, cancellationToken);
+            if (position is null)
+                _logger?.LogWarning(
+                    "ControlLoop {ProcessorId} takes over from {OldProcessorId}, which has no checkpoint: " +
+                    "starting from position 0", ProcessorId, id);
+            lowest = Math.Min(lowest, position ?? 0L);
+        }
+
+        return lowest;
+    }
+
     private async Task SaveCheckpointAsync(long position, CancellationToken cancellationToken)
     {
         using var activity = BackgroundSpans.StartRoot("alberto.checkpoint.save");
@@ -696,6 +819,27 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
         }
     }
 
+    /// <summary>
+    /// Saves a checkpoint that only passes events this processor does not handle. The caching store
+    /// batches it (a lagging write replays, never skips); any other store gets a plain save.
+    /// </summary>
+    private Task SaveSkipForwardAsync(long position, CancellationToken cancellationToken) =>
+        _checkpointStore is CachingCheckpointStore caching
+            ? caching.SaveSkipForwardAsync(ProcessorId, position)
+            : SaveCheckpointAsync(position, cancellationToken);
+
+    /// <summary>
+    /// Waits for the head to advance past what this pass saw, bounded by the polling interval so a
+    /// loop still re-reads its checkpoint (an operator rewind, a lease hand-over) at the old cadence.
+    /// </summary>
+    private async Task WaitForHeadAsync(Task headAdvanced, CancellationToken cancellationToken)
+    {
+        using var timer = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        await Task.WhenAny(headAdvanced, Task.Delay(_pollingInterval, _timeProvider, timer.Token));
+        await timer.CancelAsync();
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
     /// <summary>Records lag telemetry and, when a health state is wired, a liveness heartbeat.</summary>
     private void ReportProgress(long lag)
     {
@@ -706,13 +850,17 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
     private void ReportFaulted() =>
         _healthState?.Report(ProcessorId, isFaulted: true, lag: 0, _timeProvider.GetUtcNow());
 
-    private async Task SaveWatermarkCheckpointAsync(PositionWatermark watermark, CancellationToken cancellationToken)
+    private async Task SaveWatermarkCheckpointAsync(
+        PositionWatermark watermark, CancellationToken cancellationToken, bool skipForward = false)
     {
         var safeCheckpoint = watermark.SafeCheckpoint;
         var current = await _checkpointStore.GetAsync(ProcessorId, cancellationToken) ?? 0L;
         if (safeCheckpoint > current)
         {
-            await SaveCheckpointAsync(safeCheckpoint, cancellationToken);
+            if (skipForward)
+                await SaveSkipForwardAsync(safeCheckpoint, cancellationToken);
+            else
+                await SaveCheckpointAsync(safeCheckpoint, cancellationToken);
             await ClearFaultOnceAsync(cancellationToken);
         }
     }

@@ -86,7 +86,7 @@ public sealed class ControlLoopMiddlewareTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var deadLetters = new InMemoryDeadLetterStore();
 
         // Position 1 = poison, positions 2..3 should still be processed
@@ -143,7 +143,7 @@ public sealed class ControlLoopMiddlewareTests
     public async Task PermanentError_DoesNotRetry()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var deadLetters = new InMemoryDeadLetterStore();
         var cancellationToken = TestContext.Current.CancellationToken;
 
@@ -190,7 +190,7 @@ public sealed class ControlLoopMiddlewareTests
     public async Task TransientError_RetriesUpToMaxThenDeadLetters()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var deadLetters = new InMemoryDeadLetterStore();
         var cancellationToken = TestContext.Current.CancellationToken;
 
@@ -314,7 +314,7 @@ public sealed class ControlLoopMiddlewareTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var deadLetters = new InMemoryDeadLetterStore();
 
         await backend.AppendAsync([CreateEvent(new TestEvent("poison"))], cancellationToken: cancellationToken);

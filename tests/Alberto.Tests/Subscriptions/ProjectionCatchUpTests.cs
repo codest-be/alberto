@@ -1,7 +1,6 @@
 using Alberto.Checkpoints;
 using Alberto.InMemory;
 using Alberto.Projections;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Subscriptions;
@@ -18,15 +17,14 @@ public sealed class ProjectionCatchUpTests
     public async Task WaitForProjection_ReturnsOnceTheProcessorReachesThePosition()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var catchUp = new ProjectionCatchUp(new InMemoryEventStoreBackend(), checkpoints);
 
         var waiting = catchUp.WaitForProjectionAsync(
             Processor, position: 7, TimeSpan.FromSeconds(10), cancellationToken);
 
         // Nothing has consumed anything yet, so the wait cannot have finished.
-        waiting.IsCompleted.Should().BeFalse(
-            because: "the processor has not reached position 7");
+        Assert.False(waiting.IsCompleted, "the processor has not reached position 7");
 
         await checkpoints.SaveAsync(Processor, 7, cancellationToken);
 
@@ -37,7 +35,7 @@ public sealed class ProjectionCatchUpTests
     public async Task WaitForProjection_ReturnsWhenTheProcessorIsAlreadyPastThePosition()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         await checkpoints.SaveAsync(Processor, 12, cancellationToken);
 
         var catchUp = new ProjectionCatchUp(new InMemoryEventStoreBackend(), checkpoints);
@@ -52,7 +50,7 @@ public sealed class ProjectionCatchUpTests
     public async Task WaitForProjection_ThrowsNamingTheProcessorWhenItDoesNotCatchUpInTime()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         await checkpoints.SaveAsync(Processor, 3, cancellationToken);
 
         var catchUp = new ProjectionCatchUp(new InMemoryEventStoreBackend(), checkpoints);
@@ -63,14 +61,16 @@ public sealed class ProjectionCatchUpTests
 
         // Whoever hits this in production has a stopped, faulted or out-of-process loop, and
         // needs to know which processor and how far behind it was without attaching a debugger.
-        thrown.Message.Should().Contain(Processor).And.Contain("9").And.Contain("3");
+        Assert.Contains(Processor, thrown.Message);
+        Assert.Contains("9", thrown.Message);
+        Assert.Contains("3", thrown.Message);
     }
 
     [Fact]
     public async Task WaitForProjection_WithoutAPosition_WaitsForTheHeadAsOfTheCall()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         // A store somebody else keeps writing to. Read the head twice and it is already higher,
         // so an implementation that re-reads it is chasing a target it can never reach — the
@@ -91,15 +91,15 @@ public sealed class ProjectionCatchUpTests
 
         await waiting;
 
-        backend.HeadReads.Should().Be(1,
-            because: "the head is a snapshot taken when the caller asked, not a moving target");
+        // the head is a snapshot taken when the caller asked, not a moving target
+        Assert.Equal(1, backend.HeadReads);
     }
 
     [Fact]
     public async Task WaitForProjection_ObservesCancellationRatherThanRunningOutTheTimeout()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var catchUp = new ProjectionCatchUp(new InMemoryEventStoreBackend(), checkpoints);
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -151,17 +151,23 @@ public sealed class ProjectionCatchUpTests
             IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery = null,
             long? expectedPosition = null, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+            IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery, long? expectedPosition,
+            Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
     }
 
     [Fact]
     public async Task WaitForProjection_ReadingTheStore_SeesProgressAnotherReplicaWrote()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var database = new InMemoryCheckpointStore();
+        var database = new InMemoryFencedCheckpointStore();
         await using var cache = new CachingCheckpointStore(database);
 
         // This replica looked once (and cached "nothing consumed"); no loop of its own advances it.
-        (await cache.GetAsync(Processor, cancellationToken)).Should().BeNull();
+        Assert.Null((await cache.GetAsync(Processor, cancellationToken)));
 
         var catchUp = new ProjectionCatchUp(
             new InMemoryEventStoreBackend(), cache, defaultTimeout: null, readStore: true);
@@ -172,15 +178,15 @@ public sealed class ProjectionCatchUpTests
         await database.SaveAsync(Processor, 7, cancellationToken);
 
         await waiting;
-        (await cache.GetAsync(Processor, cancellationToken)).Should().BeNull(
-            because: "the wait reads the store for itself and leaves the loop's cache alone");
+        // the wait reads the store for itself and leaves the loop's cache alone
+        Assert.Null((await cache.GetAsync(Processor, cancellationToken)));
     }
 
     [Fact]
     public async Task WaitForProjection_WithoutReadingTheStore_SeesOnlyTheCache()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var database = new InMemoryCheckpointStore();
+        var database = new InMemoryFencedCheckpointStore();
         await using var cache = new CachingCheckpointStore(database);
         await cache.GetAsync(Processor, cancellationToken);
         await database.SaveAsync(Processor, 7, cancellationToken);
@@ -206,13 +212,13 @@ public sealed class ProjectionCatchUpTests
             new InMemoryEventStoreBackend(), cache, defaultTimeout: null, readStore: true);
         await catchUp.WaitForProjectionAsync(Processor, position: 7, TimeSpan.Zero, cancellationToken);
 
-        database.Reads.Should().Be(readsBefore,
-            because: "the replica running the loop is answered by its cache, without a round trip");
+        // the replica running the loop is answered by its cache, without a round trip
+        Assert.Equal(readsBefore, database.Reads);
     }
 
     private sealed class CountingCheckpointStore : ICheckpointStore
     {
-        private readonly InMemoryCheckpointStore _inner = new();
+        private readonly InMemoryFencedCheckpointStore _inner = new();
         public int Reads;
 
         public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)

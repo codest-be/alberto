@@ -5,7 +5,6 @@ using Alberto.Checkpoints;
 using Alberto.DeadLetters;
 using Alberto.Leases;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -129,7 +128,7 @@ public class LeaseFencingRegistrationTests
             await host.StopAsync(TestContext.Current.CancellationToken);
         }
 
-        leaseManager.CapturedStopReplicaId.Should().Be(Environment.MachineName);
+        Assert.Equal(Environment.MachineName, leaseManager.CapturedStopReplicaId);
     }
 
     [Fact]
@@ -144,7 +143,7 @@ public class LeaseFencingRegistrationTests
             await host.StopAsync(TestContext.Current.CancellationToken);
         }
 
-        leaseManager.CapturedStopReplicaId.Should().Be(Environment.MachineName);
+        Assert.Equal(Environment.MachineName, leaseManager.CapturedStopReplicaId);
     }
 
     [Fact]
@@ -158,7 +157,7 @@ public class LeaseFencingRegistrationTests
             await host.StopAsync(TestContext.Current.CancellationToken);
         }
 
-        leaseManager.CapturedStopReplicaId.Should().Be(Environment.MachineName);
+        Assert.Equal(Environment.MachineName, leaseManager.CapturedStopReplicaId);
     }
 
     [Fact]
@@ -171,7 +170,7 @@ public class LeaseFencingRegistrationTests
             await host.StopAsync(TestContext.Current.CancellationToken);
         }
 
-        leaseManager.CapturedStopReplicaId.Should().Be("pod-1");
+        Assert.Equal("pod-1", leaseManager.CapturedStopReplicaId);
     }
 
     [Fact]
@@ -192,10 +191,10 @@ public class LeaseFencingRegistrationTests
 
         var act = async () => await host.StartAsync(TestContext.Current.CancellationToken);
 
-        var ex = await act.Should().ThrowAsync<InvalidOperationException>();
-        ex.Which.Message.Should().Contain("ALB0025");
-        ex.Which.Message.Should().Contain("IProcessorLeaseManager");
-        ex.Which.Message.Should().Contain(ModuleKey);
+        var ex = await Assert.ThrowsAnyAsync<InvalidOperationException>(act);
+        Assert.Contains("ALB0025", ex.Message);
+        Assert.Contains("IProcessorLeaseManager", ex.Message);
+        Assert.Contains(ModuleKey, ex.Message);
     }
 
     [Fact]
@@ -217,11 +216,9 @@ public class LeaseFencingRegistrationTests
         var cancellationToken = TestContext.Current.CancellationToken;
         await host.StartAsync(cancellationToken);
 
-        host.Services.GetRequiredKeyedService<IProcessorLeaseManager>(ModuleKey)
-            .Should().BeOfType<Alberto.InMemory.InMemoryProcessorLeaseManager>();
-        host.Services.GetRequiredKeyedService<ICheckpointStore>(ModuleKey)
-            .Should().BeAssignableTo<IFencableCheckpointStore>(
-                "the lease path fences checkpoint writes through the caching store");
+        Assert.IsType<Alberto.InMemory.InMemoryProcessorLeaseManager>(host.Services.GetRequiredKeyedService<IProcessorLeaseManager>(ModuleKey));
+        // the lease path fences checkpoint writes through the caching store
+        Assert.IsAssignableFrom<IFencableCheckpointStore>(host.Services.GetRequiredKeyedService<ICheckpointStore>(ModuleKey));
 
         await host.StopAsync(cancellationToken);
     }
@@ -240,11 +237,11 @@ public class FencingContextRegistrationTests
 
     /// <summary>
     /// A checkpoint store that captures the arguments to SetFencingContext and
-    /// SubscribeFenceViolation, delegating actual storage to InMemoryCheckpointStore.
+    /// SubscribeFenceViolation, delegating actual storage to InMemoryFencedCheckpointStore.
     /// </summary>
     private sealed class CapturingFencableCheckpointStore : ICheckpointStore, IFencableCheckpointStore
     {
-        private readonly InMemoryCheckpointStore _inner = new();
+        private readonly InMemoryFencedCheckpointStore _inner = new();
 
         public FencingContext? CapturedContext { get; private set; }
         public bool SubscribeFenceViolationWasCalled { get; private set; }
@@ -330,9 +327,9 @@ public class FencingContextRegistrationTests
     {
         var store = await StartAndStopHostAsync(replicaId: "pod-1");
 
-        store.CapturedContext.Should().NotBeNull(
-            "SetFencingContext must be called so the checkpoint store knows the module key " +
-            "and replica id when evaluating fence tokens");
+        // SetFencingContext must be called so the checkpoint store knows the module key and replica id
+        // when evaluating fence tokens
+        Assert.NotNull(store.CapturedContext);
     }
 
     /// <summary>
@@ -344,8 +341,7 @@ public class FencingContextRegistrationTests
     {
         var store = await StartAndStopHostAsync(replicaId: "pod-1");
 
-        store.CapturedContext!.UseProcessorLeaseFencing.Should().BeTrue(
-            "processor-lease fencing must be activated so that checkpoint writes are fenced " +
+        Assert.True(store.CapturedContext!.UseProcessorLeaseFencing, "processor-lease fencing must be activated so that checkpoint writes are fenced " +
             "against the lease generation rather than always proceeding");
     }
 
@@ -358,8 +354,8 @@ public class FencingContextRegistrationTests
     {
         var store = await StartAndStopHostAsync(replicaId: "pod-1");
 
-        store.CapturedContext!.ConsumerId.Should().Be(ModuleKey);
-        store.CapturedContext!.ReplicaId.Should().Be("pod-1");
+        Assert.Equal(ModuleKey, store.CapturedContext!.ConsumerId);
+        Assert.Equal("pod-1", store.CapturedContext!.ReplicaId);
     }
 
     /// <summary>
@@ -372,8 +368,7 @@ public class FencingContextRegistrationTests
     {
         var store = await StartAndStopHostAsync(replicaId: "pod-1");
 
-        store.SubscribeFenceViolationWasCalled.Should().BeTrue(
-            "SubscribeFenceViolation must be called so the group stops when the lease is lost");
+        Assert.True(store.SubscribeFenceViolationWasCalled, "SubscribeFenceViolation must be called so the group stops when the lease is lost");
     }
 }
 
@@ -438,11 +433,11 @@ public class NonClaimableDeadLetterStoreRegistrationTests
         await host.StartAsync(TestContext.Current.CancellationToken);
         await host.StopAsync(TestContext.Current.CancellationToken);
 
-        loggingProvider.Entries
-            .Should().Contain(e =>
+        // a warning must be logged when the dead letter store cannot support automatic claim-and-fence
+        // retry
+        Assert.Contains(loggingProvider.Entries, e =>
                 e.Level == LogLevel.Warning &&
-                e.Message.Contains("IClaimableDeadLetterStore"),
-            "a warning must be logged when the dead letter store cannot support automatic claim-and-fence retry");
+                e.Message.Contains("IClaimableDeadLetterStore"));
     }
 
     [Fact]
@@ -463,6 +458,6 @@ public class NonClaimableDeadLetterStoreRegistrationTests
             await host.StopAsync(TestContext.Current.CancellationToken);
         };
 
-        await act.Should().NotThrowAsync();
+        await act();
     }
 }

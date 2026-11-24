@@ -162,9 +162,9 @@ public class ProjectionSpecTests
     [Fact]
     public void The_opening_stage_arranges_or_acts_and_asserts_nothing()
     {
-        Assert.Empty(typeof(ProjectionSpecification<TabDocument>)
-            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-            .Where(m => m.Name.StartsWith("Then", StringComparison.Ordinal)));
+        var methods = typeof(ProjectionSpecification<TabDocument>)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance);
+        Assert.DoesNotContain(methods, m => m.Name.StartsWith("Then", StringComparison.Ordinal));
     }
 
     [Fact]

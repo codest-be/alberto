@@ -1,7 +1,6 @@
 using Alberto;
 using Alberto.Configuration;
 using Alberto.InMemory;
-using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
@@ -50,8 +49,8 @@ public class OrphanPolicyDefaultTests
     {
         var definition = Resolve(environmentName);
 
-        definition.Checkpoints.OrphanPolicy.Should().Be(OrphanCheckpointPolicy.Warn,
-            "an orphaned checkpoint must never be able to fail a deployment that did not ask for it");
+        // an orphaned checkpoint must never be able to fail a deployment that did not ask for it
+        Assert.Equal(OrphanCheckpointPolicy.Warn, definition.Checkpoints.OrphanPolicy);
     }
 
     [Fact]
@@ -66,7 +65,7 @@ public class OrphanPolicyDefaultTests
 
         var definition = Resolve("Production", configuration);
 
-        definition.Checkpoints.OrphanPolicy.Should().Be(OrphanCheckpointPolicy.Strict);
+        Assert.Equal(OrphanCheckpointPolicy.Strict, definition.Checkpoints.OrphanPolicy);
     }
 
     [Fact]
@@ -81,6 +80,6 @@ public class OrphanPolicyDefaultTests
 
         var definition = Resolve("Development", configuration);
 
-        definition.Checkpoints.OrphanPolicy.Should().Be(OrphanCheckpointPolicy.Off);
+        Assert.Equal(OrphanCheckpointPolicy.Off, definition.Checkpoints.OrphanPolicy);
     }
 }

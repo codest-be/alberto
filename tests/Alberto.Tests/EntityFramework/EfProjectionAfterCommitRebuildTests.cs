@@ -2,7 +2,6 @@ using Alberto.EntityFramework;
 using Alberto.InMemory;
 using Alberto.Projections;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -44,8 +43,8 @@ public sealed class EfProjectionAfterCommitRebuildTests(EfProjectionTestFixture 
         var live = provider.GetRequiredKeyedService<IEventProcessor>(ModuleKey);
         await ProcessAsync(live, EfTestEnvelopes.ForCounterIncremented(entityId, amount: 3, position: 1));
 
-        seen.Should().ContainSingle("the live path is what afterCommit exists for")
-            .Which.Should().ContainSingle().Which.GlobalPosition.Should().Be(1);
+        // the live path is what afterCommit exists for
+        Assert.Equal(1, Assert.Single(Assert.Single(seen)).GlobalPosition);
     }
 
     [Fact]
@@ -62,11 +61,11 @@ public sealed class EfProjectionAfterCommitRebuildTests(EfProjectionTestFixture 
         // The write itself must still happen — this is a rebuild doing its job, minus the
         // side effect. Asserting only "no callback" would also pass if the processor did nothing.
         var versions = await fixture.ReadVersionsAsync(entityId);
-        versions.Should().ContainKey(2).WhoseValue.Counter.Should().Be(3);
+        Assert.Equal(3, Assert.Contains(2, versions).Counter);
 
-        seen.Should().BeEmpty(
-            "a rebuild replays history into a version nothing reads yet; re-emitting every "
-            + "notification the system has ever sent is not a rebuild, it is a second delivery");
+        // a rebuild replays history into a version nothing reads yet; re-emitting every notification the
+        // system has ever sent is not a rebuild, it is a second delivery
+        Assert.Empty(seen);
     }
 
     /// <summary>

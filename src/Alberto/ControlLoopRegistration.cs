@@ -247,6 +247,12 @@ internal static class ControlLoopRegistration
 
             var replicaId = options.Leases.EffectiveReplicaId;
 
+            // With leases on, a processor's retries run only where its lease is held, and between
+            // its live dispatches there.
+            var heldLoop = options.Leases.Enabled
+                ? ((LeaseAwareControlLoopGroup)sp.GetRequiredKeyedService<ILiveLoopSuspender>(moduleKey)).HeldLoop
+                : (Func<string, ControlLoop?>?)null;
+
             // Automatic retry needs an atomic claim-and-fence, which is the optional
             // IClaimableDeadLetterStore capability rather than part of every store's contract.
             // A store without it can still record and clear dead letters and can still be
@@ -264,6 +270,17 @@ internal static class ControlLoopRegistration
                 return new DeadLetterRetryLoopGroup([]);
             }
 
+            // One "which processors have due dead letters" read per interval for the whole
+            // module, instead of one claim per processor, when the store can answer it.
+            var gate = claimableStore is IDeadLetterDueProbe probe && processors.Count > 0
+                ? new DeadLetterDueGate(
+                    probe,
+                    processors.Select(p => p.ProcessorId),
+                    options.DeadLetterRetry.PollingInterval,
+                    timeProvider,
+                    logger)
+                : null;
+
             var retryLoops = processors
                 .Select(p => new DeadLetterRetryLoop(
                     p,
@@ -275,10 +292,12 @@ internal static class ControlLoopRegistration
                     options.DeadLetterRetry.ClaimLease,
                     replicaId,
                     timeProvider: timeProvider,
-                    drainTimeout: options.DrainTimeout))
+                    drainTimeout: options.DrainTimeout,
+                    gate: gate,
+                    heldLoop: heldLoop))
                 .ToList();
 
-            return new DeadLetterRetryLoopGroup(retryLoops);
+            return new DeadLetterRetryLoopGroup(retryLoops, gate);
         });
     }
 }

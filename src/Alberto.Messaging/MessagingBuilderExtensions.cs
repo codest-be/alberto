@@ -108,10 +108,13 @@ public static class MessagingBuilderExtensions
             var registry = new MessageMappingRegistry(context.ModuleKey);
             configureMappings(registry);
 
+            // Lets the relay pick up what this process just enqueued without waiting out its idle delay.
+            var wake = new WakeSignal();
+
             // Register the handler as a keyed IEventProcessor so the ControlLoop picks it up.
             // OutboxHandler implements IBatchableProcessor, satisfying the default Required batching mode.
             context.Services.AddKeyedSingleton<IEventProcessor>(context.ModuleKey, (sp, _) =>
-                new OutboxHandler(registry, outboxStore, sp.GetRequiredService<IServiceScopeFactory>()));
+                new OutboxHandler(registry, outboxStore, sp.GetRequiredService<IServiceScopeFactory>(), wake));
 
             context.Services.AddSingleton<IHostedService>(
                 sp => new OutboxRetentionService(
@@ -134,7 +137,8 @@ public static class MessagingBuilderExtensions
                         claimLease: relayClaimLease,
                         maxRetries: relayMaxRetries,
                         logger: sp.GetService<ILogger<OutboxRelay>>(),
-                        instruments: AlbertoInstruments.For(sp)));
+                        instruments: AlbertoInstruments.For(sp),
+                        wake: wake));
             }
         });
 

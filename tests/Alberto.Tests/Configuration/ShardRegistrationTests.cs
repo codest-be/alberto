@@ -2,7 +2,6 @@ using Alberto.Configuration;
 using Alberto.Postgres;
 using Alberto.Checkpoints;
 using Alberto.Tenancy;
-using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -49,16 +48,16 @@ public class ShardRegistrationTests
             .Get(name);
 
     private static PostgresOptions PostgresOf(AlbertoModuleDefinition definition) =>
-        definition.Backend.Should().BeOfType<PostgresBackendDescriptor>().Subject.Options;
+        Assert.IsType<PostgresBackendDescriptor>(definition.Backend).Options;
 
     [Fact]
     public void The_shards_are_declared_in_order()
     {
         var definition = Definition(ShardedModule(), "orders");
 
-        definition.Tenancy.IsSharded.Should().BeTrue();
-        definition.Tenancy.ShardIds.Should().Equal("db1", "db2");
-        definition.Tenancy.DefaultShardId.Should().Be("db1");
+        Assert.True(definition.Tenancy.IsSharded);
+        Assert.Equal(["db1", "db2"], definition.Tenancy.ShardIds);
+        Assert.Equal("db1", definition.Tenancy.DefaultShardId);
     }
 
     [Fact]
@@ -68,23 +67,22 @@ public class ShardRegistrationTests
         var shards = definition.Tenancy.Shards
             .ToDictionary(s => s.ShardId, s => ((PostgresBackendDescriptor)s.Backend).Options);
 
-        shards["db1"].ConnectionString.Should().Be(Db1);
-        shards["db1"].Schema.Should().Be("orders");
-        shards["db1"].MaxPoolSize.Should().Be(30);
+        Assert.Equal(Db1, shards["db1"].ConnectionString);
+        Assert.Equal("orders", shards["db1"].Schema);
+        Assert.Equal(30, shards["db1"].MaxPoolSize);
 
-        shards["db2"].ConnectionString.Should().Be(Db2);
-        shards["db2"].Schema.Should().Be("orders");
-        shards["db2"].MaxPoolSize.Should().Be(10);
+        Assert.Equal(Db2, shards["db2"].ConnectionString);
+        Assert.Equal("orders", shards["db2"].Schema);
+        Assert.Equal(10, shards["db2"].MaxPoolSize);
     }
 
     [Fact]
     public void The_catalog_inherits_the_modules_settings_too()
     {
-        var catalog = Definition(ShardedModule(), "orders").Tenancy.Catalog
-            .Should().BeOfType<PostgresBackendDescriptor>().Subject.Options;
+        var catalog = Assert.IsType<PostgresBackendDescriptor>(Definition(ShardedModule(), "orders").Tenancy.Catalog).Options;
 
-        catalog.ConnectionString.Should().Be(CatalogCs);
-        catalog.Schema.Should().Be("orders");
+        Assert.Equal(CatalogCs, catalog.ConnectionString);
+        Assert.Equal("orders", catalog.Schema);
     }
 
     [Fact]
@@ -92,8 +90,8 @@ public class ShardRegistrationTests
     {
         var services = ShardedModule();
 
-        PostgresOf(Definition(services, "orders#db1")).ConnectionString.Should().Be(Db1);
-        PostgresOf(Definition(services, "orders#db2")).ConnectionString.Should().Be(Db2);
+        Assert.Equal(Db1, PostgresOf(Definition(services, "orders#db1")).ConnectionString);
+        Assert.Equal(Db2, PostgresOf(Definition(services, "orders#db2")).ConnectionString);
     }
 
     [Fact]
@@ -103,11 +101,11 @@ public class ShardRegistrationTests
         // keeps validation and registration from recursing.
         var shard = Definition(ShardedModule(), "orders#db1");
 
-        shard.TenancyEnabled.Should().BeTrue();
-        shard.Tenancy.IsSharded.Should().BeFalse();
-        shard.ShardId.Should().Be("db1");
-        shard.ModuleKey.Should().Be("orders");
-        shard.ServiceKey.Should().Be("orders#db1");
+        Assert.True(shard.TenancyEnabled);
+        Assert.False(shard.Tenancy.IsSharded);
+        Assert.Equal("db1", shard.ShardId);
+        Assert.Equal("orders", shard.ModuleKey);
+        Assert.Equal("orders#db1", shard.ServiceKey);
     }
 
     [Fact]
@@ -116,13 +114,10 @@ public class ShardRegistrationTests
         var provider = ShardedModule().BuildServiceProvider();
         using var scope = provider.CreateScope();
 
-        scope.ServiceProvider.GetRequiredKeyedService<IEventStore>("orders")
-            .Should().BeOfType<ShardRoutingEventStore>();
+        Assert.IsType<ShardRoutingEventStore>(scope.ServiceProvider.GetRequiredKeyedService<IEventStore>("orders"));
 
-        scope.ServiceProvider.GetRequiredKeyedService<IEventStore>("orders#db1")
-            .Should().NotBeOfType<ShardRoutingEventStore>();
-        scope.ServiceProvider.GetRequiredKeyedService<IEventStore>("orders#db2")
-            .Should().NotBeOfType<ShardRoutingEventStore>();
+        Assert.IsNotType<ShardRoutingEventStore>(scope.ServiceProvider.GetRequiredKeyedService<IEventStore>("orders#db1"));
+        Assert.IsNotType<ShardRoutingEventStore>(scope.ServiceProvider.GetRequiredKeyedService<IEventStore>("orders#db2"));
     }
 
     [Fact]
@@ -135,7 +130,7 @@ public class ShardRegistrationTests
         var db1 = provider.GetRequiredKeyedService<ICheckpointStore>("orders#db1");
         var db2 = provider.GetRequiredKeyedService<ICheckpointStore>("orders#db2");
 
-        db1.Should().NotBeSameAs(db2);
+        Assert.NotSame(db2, db1);
     }
 
     [Fact]
@@ -143,10 +138,9 @@ public class ShardRegistrationTests
     {
         var provider = ShardedModule().BuildServiceProvider();
 
-        provider.GetRequiredKeyedService<ITenantShardMap>("orders")
-            .Should().BeOfType<PostgresTenantShardMap>();
-        provider.GetRequiredKeyedService<TenantShardResolver>("orders").Should().NotBeNull();
-        provider.GetRequiredKeyedService<ShardHealth>("orders").Should().NotBeNull();
+        Assert.IsType<PostgresTenantShardMap>(provider.GetRequiredKeyedService<ITenantShardMap>("orders"));
+        Assert.NotNull(provider.GetRequiredKeyedService<TenantShardResolver>("orders"));
+        Assert.NotNull(provider.GetRequiredKeyedService<ShardHealth>("orders"));
     }
 
     [Fact]
@@ -154,8 +148,8 @@ public class ShardRegistrationTests
     {
         var provider = ShardedModule().BuildServiceProvider();
 
-        provider.GetRequiredService<IOptions<HealthCheckServiceOptions>>()
-            .Value.Registrations.Should().ContainSingle(r => r.Name == "alberto-shards-orders");
+        Assert.Single(provider.GetRequiredService<IOptions<HealthCheckServiceOptions>>()
+            .Value.Registrations, r => r.Name == "alberto-shards-orders");
     }
 
     [Fact]
@@ -173,9 +167,9 @@ public class ShardRegistrationTests
         var definition = Definition(ShardedModule(configuration), "orders");
 
         var db2 = definition.Tenancy.Shards.Single(s => s.ShardId == "db2").Backend;
-        ((PostgresBackendDescriptor)db2).Options.MaxPoolSize.Should().Be(50);
-        definition.Tenancy.DefaultShardId.Should().Be("db2");
-        definition.Tenancy.CatalogRefreshInterval.Should().Be(TimeSpan.FromMinutes(1));
+        Assert.Equal(50, ((PostgresBackendDescriptor)db2).Options.MaxPoolSize);
+        Assert.Equal("db2", definition.Tenancy.DefaultShardId);
+        Assert.Equal(TimeSpan.FromMinutes(1), definition.Tenancy.CatalogRefreshInterval);
     }
 
     [Fact]
@@ -190,9 +184,8 @@ public class ShardRegistrationTests
 
         var definition = Definition(ShardedModule(configuration), "orders");
 
-        definition.Tenancy.Shards
-            .Select(s => ((PostgresBackendDescriptor)s.Backend).Options.Schema)
-            .Should().AllBe("orders_v2");
+        Assert.All(definition.Tenancy.Shards
+            .Select(s => ((PostgresBackendDescriptor)s.Backend).Options.Schema), item => Assert.Equal("orders_v2", item));
     }
 
     [Fact]
@@ -209,8 +202,8 @@ public class ShardRegistrationTests
         var shards = Definition(ShardedModule(configuration), "orders").Tenancy.Shards
             .ToDictionary(s => s.ShardId, s => ((PostgresBackendDescriptor)s.Backend).Options.Schema);
 
-        shards["db1"].Should().Be("orders_v2");
-        shards["db2"].Should().Be("orders_legacy");
+        Assert.Equal("orders_v2", shards["db1"]);
+        Assert.Equal("orders_legacy", shards["db2"]);
     }
 
     [Fact]
@@ -226,7 +219,7 @@ public class ShardRegistrationTests
 
         var catalog = (PostgresBackendDescriptor)Definition(ShardedModule(configuration), "orders").Tenancy.Catalog!;
 
-        catalog.Options.ConnectionString.Should().Contain("Host=control2");
+        Assert.Contains("Host=control2", catalog.Options.ConnectionString);
     }
 
     [Fact]
@@ -246,10 +239,11 @@ public class ShardRegistrationTests
 
         // Registration ran while the collection was being built, before this configuration was
         // read, so the shard has no services of its own however complete its section looks.
-        scope.ServiceProvider.GetKeyedService<IEventStore>("orders#db3").Should().BeNull();
+        Assert.Null(scope.ServiceProvider.GetKeyedService<IEventStore>("orders#db3"));
 
         var resolve = () => Definition(services, "orders");
-        resolve.Should().Throw<OptionsValidationException>().WithMessage("*ALB0015*");
+        var exception = Assert.ThrowsAny<OptionsValidationException>(resolve);
+        Assert.Contains("ALB0015", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -261,6 +255,7 @@ public class ShardRegistrationTests
 
         var resolve = () => Definition(services, "orders");
 
-        resolve.Should().Throw<OptionsValidationException>().WithMessage("*ALB0012*");
+        var exception = Assert.ThrowsAny<OptionsValidationException>(resolve);
+        Assert.Contains("ALB0012", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -1,6 +1,5 @@
 using Alberto.EntityFramework;
 using Alberto.InMemory;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -30,7 +29,7 @@ public class EfProjectionTenancyGuardTests
 
     /// <summary>
     /// Builds a module with the given tenancy and uniqueness declaration and returns an
-    /// <see cref="Action"/> that can be passed to FluentAssertions. <paramref name="tenancyFirst"/>
+    /// <see cref="Action"/> that can be passed to an exception assertion. <paramref name="tenancyFirst"/>
     /// controls whether <c>.WithTenancy()</c> is chained before or after <c>AddEfProjection</c> —
     /// the guard runs from a deferred registration callback precisely so the answer does not
     /// depend on that.
@@ -86,20 +85,18 @@ public class EfProjectionTenancyGuardTests
     [InlineData(ProjectionMode.Inline)]
     public void Tenant_enabled_module_without_a_uniqueness_declaration_is_refused(ProjectionMode mode)
     {
-        Register(tenancy: true, EfDocumentIdUniqueness.NotDeclared, mode)
-            .Should().Throw<InvalidOperationException>()
-            .WithMessage("ALB0027:*")
-            .WithMessage($"*'{ProcessorId}'*")
-            .WithMessage("*EfDocumentIdUniqueness.AcrossTenants*",
-                "the message has to name the opt-in that unblocks the registration");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(Register(tenancy: true, EfDocumentIdUniqueness.NotDeclared, mode));
+        Assert.StartsWith("ALB0027:", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains($"'{ProcessorId}'", exception.Message, StringComparison.OrdinalIgnoreCase);
+        // the message has to name the opt-in that unblocks the registration
+        Assert.Contains("EfDocumentIdUniqueness.AcrossTenants", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void AfterCommit_overload_is_refused_on_the_same_terms()
     {
-        RegisterWithAfterCommit(tenancy: true, EfDocumentIdUniqueness.NotDeclared)
-            .Should().Throw<InvalidOperationException>()
-            .WithMessage("ALB0027:*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(RegisterWithAfterCommit(tenancy: true, EfDocumentIdUniqueness.NotDeclared));
+        Assert.StartsWith("ALB0027:", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -108,9 +105,8 @@ public class EfProjectionTenancyGuardTests
         // The whole reason the guard lives in a deferred registration callback rather than at the
         // AddEfProjection call site: the callbacks do not run until the module lambda has
         // completed, so chain order cannot decide whether the module is tenant-enabled.
-        Register(tenancy: true, EfDocumentIdUniqueness.NotDeclared, tenancyFirst: false)
-            .Should().Throw<InvalidOperationException>()
-            .WithMessage("ALB0027:*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(Register(tenancy: true, EfDocumentIdUniqueness.NotDeclared, tenancyFirst: false));
+        Assert.StartsWith("ALB0027:", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     // ── the combinations that are allowed ──────────────────────────────────────────────────
@@ -120,15 +116,14 @@ public class EfProjectionTenancyGuardTests
     [InlineData(ProjectionMode.Inline)]
     public void Tenant_enabled_module_with_the_uniqueness_declaration_is_accepted(ProjectionMode mode)
     {
-        Register(tenancy: true, EfDocumentIdUniqueness.AcrossTenants, mode)
-            .Should().NotThrow("the caller has stated that no two tenants can share a document id");
+        // the caller has stated that no two tenants can share a document id
+        Register(tenancy: true, EfDocumentIdUniqueness.AcrossTenants, mode)();
     }
 
     [Fact]
     public void AfterCommit_overload_with_the_uniqueness_declaration_is_accepted()
     {
-        RegisterWithAfterCommit(tenancy: true, EfDocumentIdUniqueness.AcrossTenants)
-            .Should().NotThrow();
+        RegisterWithAfterCommit(tenancy: true, EfDocumentIdUniqueness.AcrossTenants)();
     }
 
     [Theory]
@@ -139,14 +134,12 @@ public class EfProjectionTenancyGuardTests
         // There is no second tenant to collide with, so NotDeclared — the default — is the
         // correct value here and must stay silent. Nobody should have to answer a tenancy
         // question on a module that has no tenancy.
-        Register(tenancy: false, EfDocumentIdUniqueness.NotDeclared, mode)
-            .Should().NotThrow();
+        Register(tenancy: false, EfDocumentIdUniqueness.NotDeclared, mode)();
     }
 
     [Fact]
     public void Single_tenant_afterCommit_registration_is_accepted_without_any_declaration()
     {
-        RegisterWithAfterCommit(tenancy: false, EfDocumentIdUniqueness.NotDeclared)
-            .Should().NotThrow();
+        RegisterWithAfterCommit(tenancy: false, EfDocumentIdUniqueness.NotDeclared)();
     }
 }

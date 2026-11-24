@@ -3,7 +3,6 @@ using System.Reflection;
 using Alberto.InMemory;
 using Alberto.Leases;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Subscriptions;
@@ -186,7 +185,7 @@ public sealed class LeaseAwareControlLoopGroupTests
     {
         var backend = new InMemoryEventStoreBackend();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(50));
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var processor = new StubProcessor(processorId);
         // BatchingMode.Disabled is required because StubProcessor does not implement
         // IBatchableProcessor.
@@ -220,15 +219,15 @@ public sealed class LeaseAwareControlLoopGroupTests
 
         await group.StartAsync(CancellationToken.None);
 
-        group.GetFenceToken(procId).Should().Be(0,
-            "a null lease means another replica owns the processor; no fence token must be stored");
+        // a null lease means another replica owns the processor; no fence token must be stored
+        Assert.Equal(0, group.GetFenceToken(procId));
 
-        GetRunningLoops(group).Should().NotContainKey(procId,
-            "the loop must not be tracked as running when lease acquisition returned null");
+        // the loop must not be tracked as running when lease acquisition returned null
+        Assert.DoesNotContain(procId, GetRunningLoops(group));
 
         // The ControlLoop's internal _loop task must remain null — StartAsync was not called.
-        GetControlLoopTask(loop).Should().BeNull(
-            "ControlLoop.StartAsync must not be called when the lease was not acquired");
+        // ControlLoop.StartAsync must not be called when the lease was not acquired
+        Assert.Null(GetControlLoopTask(loop));
     }
 
     [Fact]
@@ -259,16 +258,16 @@ public sealed class LeaseAwareControlLoopGroupTests
         {
             await group.StartAsync(CancellationToken.None);
 
-            group.GetFenceToken(procId).Should().Be(expectedToken,
-                "the fence token from the acquired lease must be stored for fenced writes");
+            // the fence token from the acquired lease must be stored for fenced writes
+            Assert.Equal(expectedToken, group.GetFenceToken(procId));
 
-            GetRunningLoops(group).Should().ContainKey(procId,
-                "a loop with a successfully acquired lease must appear in the running set");
+            // a loop with a successfully acquired lease must appear in the running set
+            Assert.Contains(procId, GetRunningLoops(group));
 
             // Non-null _loop confirms ControlLoop.StartAsync was actually invoked.
-            GetControlLoopTask(loop).Should().NotBeNull(
-                "ControlLoop.StartAsync must have been called; its internal _loop is null " +
-                "on a never-started loop even if _runningLoops was populated");
+            // ControlLoop.StartAsync must have been called; its internal _loop is null on a never-started
+            // loop even if _runningLoops was populated
+            Assert.NotNull(GetControlLoopTask(loop));
         }
         finally
         {
@@ -295,8 +294,8 @@ public sealed class LeaseAwareControlLoopGroupTests
 
         InvokeRenewalTimer(group);
 
-        mgr.RenewCallCount.Should().Be(0,
-            "RenewLeasesAsync must not be called when _cts is null (group never started)");
+        // RenewLeasesAsync must not be called when _cts is null (group never started)
+        Assert.Equal(0, mgr.RenewCallCount);
     }
 
     [Fact]
@@ -318,8 +317,8 @@ public sealed class LeaseAwareControlLoopGroupTests
 
         InvokeRenewalTimer(group);
 
-        mgr.RenewCallCount.Should().Be(0,
-            "RenewLeasesAsync must not be called when _cts.IsCancellationRequested is true");
+        // RenewLeasesAsync must not be called when _cts.IsCancellationRequested is true
+        Assert.Equal(0, mgr.RenewCallCount);
     }
 
     [Fact]
@@ -335,8 +334,8 @@ public sealed class LeaseAwareControlLoopGroupTests
 
         InvokeScanTimer(group);
 
-        mgr.TryAcquireCallCount.Should().Be(0,
-            "TryAcquireAsync must not be called when _cts is null (group never started)");
+        // TryAcquireAsync must not be called when _cts is null (group never started)
+        Assert.Equal(0, mgr.TryAcquireCallCount);
     }
 
     [Fact]
@@ -356,8 +355,8 @@ public sealed class LeaseAwareControlLoopGroupTests
 
         InvokeScanTimer(group);
 
-        mgr.TryAcquireCallCount.Should().Be(0,
-            "TryAcquireAsync must not be called when _cts.IsCancellationRequested is true");
+        // TryAcquireAsync must not be called when _cts.IsCancellationRequested is true
+        Assert.Equal(0, mgr.TryAcquireCallCount);
     }
 
     [Fact]
@@ -387,16 +386,15 @@ public sealed class LeaseAwareControlLoopGroupTests
         // turn any mutant that leaves a scan holding the lock into a hung test rather than a
         // failing one. See https://github.com/codest-be/alberto/issues/133.
         var scanLock = GetScanLock(group);
-        (await scanLock.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken))
-            .Should().BeTrue("the group is idle, so its scan lock must be free");
+        Assert.True((await scanLock.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)), "the group is idle, so its scan lock must be free");
         try
         {
             InvokeScanTimer(group);
 
             // The callback's WaitAsync(0) returned false → it returned early without
             // entering the scan body → TryAcquireAsync was never called.
-            mgr.TryAcquireCallCount.Should().Be(0,
-                "TryAcquireAsync must not be called when _scanLock is already held by a concurrent scan");
+            // TryAcquireAsync must not be called when _scanLock is already held by a concurrent scan
+            Assert.Equal(0, mgr.TryAcquireCallCount);
         }
         finally
         {
@@ -439,12 +437,12 @@ public sealed class LeaseAwareControlLoopGroupTests
 
         InvokeRenewalTimer(group);
 
-        GetRunningLoops(group).Should().NotContainKey(procId,
-            "a loop whose lease was not renewed must be removed from the running set");
-        GetFenceTokens(group).Should().NotContainKey(procId,
-            "the fence token entry must be removed when a lease is lost");
-        group.GetFenceToken(procId).Should().Be(0L,
-            "GetFenceToken must return the safe-zero sentinel after the lease is lost");
+        // a loop whose lease was not renewed must be removed from the running set
+        Assert.DoesNotContain(procId, GetRunningLoops(group));
+        // the fence token entry must be removed when a lease is lost
+        Assert.DoesNotContain(procId, GetFenceTokens(group));
+        // GetFenceToken must return the safe-zero sentinel after the lease is lost
+        Assert.Equal(0L, group.GetFenceToken(procId));
     }
 
     [Fact]
@@ -471,10 +469,10 @@ public sealed class LeaseAwareControlLoopGroupTests
 
         InvokeRenewalTimer(group);
 
-        GetRunningLoops(group).Should().ContainKey(procId,
-            "a loop whose lease was successfully renewed must remain in the running set");
-        group.GetFenceToken(procId).Should().Be(token,
-            "the fence token must be preserved when the lease is successfully renewed");
+        // a loop whose lease was successfully renewed must remain in the running set
+        Assert.Contains(procId, GetRunningLoops(group));
+        // the fence token must be preserved when the lease is successfully renewed
+        Assert.Equal(token, group.GetFenceToken(procId));
     }
 
     [Fact]
@@ -514,17 +512,17 @@ public sealed class LeaseAwareControlLoopGroupTests
         InvokeRenewalTimer(group);
 
         // The renewed processor must be unaffected — continue at L173 skips the cleanup.
-        GetRunningLoops(group).Should().ContainKey(renewedProc,
-            "the renewed processor must remain in the running set");
-        group.GetFenceToken(renewedProc).Should().Be(1L,
-            "the renewed processor's fence token must be preserved");
+        // the renewed processor must remain in the running set
+        Assert.Contains(renewedProc, GetRunningLoops(group));
+        // the renewed processor's fence token must be preserved
+        Assert.Equal(1L, group.GetFenceToken(renewedProc));
 
         // The non-renewed processor must be fully cleaned up — stopped at L181,
         // fence token cleared at L198, loop entry removed at L199.
-        GetRunningLoops(group).Should().NotContainKey(lostProc,
-            "the non-renewed processor must be removed from the running set");
-        group.GetFenceToken(lostProc).Should().Be(0L,
-            "the non-renewed processor's fence token must be cleared to the safe-zero sentinel");
+        // the non-renewed processor must be removed from the running set
+        Assert.DoesNotContain(lostProc, GetRunningLoops(group));
+        // the non-renewed processor's fence token must be cleared to the safe-zero sentinel
+        Assert.Equal(0L, group.GetFenceToken(lostProc));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -579,7 +577,72 @@ public sealed class LeaseAwareControlLoopGroupTests
         mgr.Gate.SetResult();
         await stop;
 
-        mgr.Held.Should().BeFalse("shutdown must release the lease the in-flight scan acquired");
-        GetRunningLoops(group).Should().BeEmpty("no loop may be left running after StopAsync");
+        Assert.False(mgr.Held, "shutdown must release the lease the in-flight scan acquired");
+        // no loop may be left running after StopAsync
+        Assert.Empty(GetRunningLoops(group));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Batch acquisition (IBatchProcessorLeaseManager, rebalancing off)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private sealed class BatchSpyLeaseManager(params string[] winnable) : IProcessorLeaseManager, IBatchProcessorLeaseManager
+    {
+        public TimeSpan LeaseDuration => TimeSpan.FromHours(1);
+        public int SingleAcquires { get; private set; }
+        public List<string[]> Requests { get; } = [];
+
+        public Task<IReadOnlyList<IProcessorLease>> TryAcquireManyAsync(
+            string consumerId, IReadOnlyCollection<string> processorIds, string replicaId, CancellationToken cancellationToken)
+        {
+            Requests.Add(processorIds.ToArray());
+            IReadOnlyList<IProcessorLease> won = processorIds.Where(winnable.Contains)
+                .Select(id => (IProcessorLease)MakeLease(id, 100 + Array.IndexOf(winnable, id))).ToList();
+            return Task.FromResult(won);
+        }
+
+        public Task<IProcessorLease?> TryAcquireAsync(
+            string consumerId, string processorId, string replicaId, CancellationToken cancellationToken = default)
+        {
+            SingleAcquires++;
+            return Task.FromResult<IProcessorLease?>(null);
+        }
+
+        public Task<IReadOnlyList<string>> RenewLeasesAsync(
+            string consumerId, string replicaId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
+
+        public Task ReleaseAllLeasesAsync(
+            string consumerId, string replicaId, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task StartAndScan_WithABatchLeaseManager_AcquireInOneCall_AndStartOnlyTheLeasesWon()
+    {
+        var mgr = new BatchSpyLeaseManager("a", "c");
+        var loops = new[] { "a", "b", "c" }.Select(id => BuildLoop(id, TimeSpan.FromMilliseconds(100))).ToArray();
+        var forgotten = new List<string>();
+        await using var group = new LeaseAwareControlLoopGroup(
+            allLoops: loops, leaseManager: mgr, consumerId: "consumer", replicaId: "replica",
+            forgetCheckpoint: (id, _) => { forgotten.Add(id); return Task.CompletedTask; });
+
+        await group.StartAsync(CancellationToken.None);
+
+        Assert.Equal(0, mgr.SingleAcquires);
+        Assert.Equal(["a", "b", "c"], Assert.Single(mgr.Requests));
+        Assert.Equivalent(new[] { "a", "c" }, GetRunningLoops(group).Keys, strict: true);
+        Assert.Equal(100, group.GetFenceToken("a"));
+        Assert.Equal(101, group.GetFenceToken("c"));
+        Assert.Equal(0, group.GetFenceToken("b"));
+        Assert.Equivalent(new[] { "a", "c" }, forgotten, strict: true);
+        Assert.Null(GetControlLoopTask(loops[1]));
+
+        await group.ScanOnceAsync();
+
+        Assert.Equal(2, mgr.Requests.Count());
+        // a scan only asks for processors not already running
+        Assert.Equal(["b"], mgr.Requests[1]);
+        Assert.Equal(0, mgr.SingleAcquires);
     }
 }

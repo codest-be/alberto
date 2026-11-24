@@ -42,6 +42,32 @@ Both forms have an overload whose handler also takes a `ReactorContext`, carryin
     processorId: "order-notifications")
 ```
 
+### One reactor for several event types
+
+When one side effect is fed by several event types and the handlers must not race each other,
+use `React<T>` instead of two `ReactTo`s. It is one processor id, one checkpoint and one lease,
+and the events are handled in log order, like a projection:
+
+```csharp
+.React<ExtractActions>("documents-extract-actions", r => r
+    .On<DocumentSigned>((h, e, ct) => h.Run(e.DocumentId, ct))
+    .On<DocumentRevised>((h, e, ctx, ct) => h.Run(e.DocumentId, ct)))
+```
+
+Two `ReactTo`s are two processors with two leases, so a `DocumentSigned` and a `DocumentRevised`
+for the same document can run at the same moment, on two replicas. With `React<T>` they never do.
+
+- `THandler` is a class, registered as scoped for you and resolved from a fresh scope per event.
+  The `On` overloads take `(h, e, ct)` or `(h, e, ctx, ct)` with a `ReactorContext`.
+- Register at least one `On`, and each event type once: both throw when the module is built.
+- Retries, dead-lettering, middleware and `StartFrom` apply as they do to any async reactor.
+- **One reactor is one failure domain.** The event types share one checkpoint, so a failing event of one type holds back the later events of every type of this reactor until it is retried successfully or dead-lettered. Two `ReactTo`s kept a poison event of one type from blocking the other.
+- **`MaxConcurrency` above 1 gives up the order.** Events of a batch then run in parallel,
+  so use it only when the handlers do not depend on each other.
+- To move existing `ReactTo` reactors onto one `React`, start it where they stopped:
+  `configure: o => o with { StartFrom = ProcessorStart.CheckpointOf("old-id-1", "old-id-2") }`.
+  See [Starting a new processor, renaming and merging](#starting-a-new-processor-renaming-and-merging).
+
 ### The processor id matters
 
 It is the checkpoint key. Two things follow:
@@ -50,8 +76,49 @@ It is the checkpoint key. Two things follow:
   One reactor, one id.
 - **Change it and you get a brand-new processor starting at position 0**, which replays the entire
   log through your side effect. Renaming a reactor's id in a deployment is how people accidentally
-  send ten thousand emails. If you must rename one, set its checkpoint before it starts:
-  `ICheckpointStore.SaveAsync(newId, currentHead)`, then `ResetAsync` the old id.
+  send ten thousand emails. Say where a new id starts instead (next section).
+
+### Starting a new processor, renaming and merging
+
+`StartFrom` decides where a processor with **no checkpoint yet** starts. Once it has a checkpoint,
+the checkpoint wins and `StartFrom` is never read again.
+
+```csharp
+// A new reactor for future events only: none of the history.
+.ReactTo<OrderPlaced>(handler, "order-sms", configure: o => o with { StartFrom = ProcessorStart.Head })
+
+// A rename: carry on where the old id stopped, no gap, no repeat.
+.ReactTo<OrderPlaced>(handler, "order-mails-v2",
+    configure: o => o with { StartFrom = ProcessorStart.CheckpointOf("order-mails") })
+
+// A merge: two reactors become one, starting at the lower of the two.
+.ReactTo<OrderPlaced>(handler, "order-notifications",
+    configure: o => o with { StartFrom = ProcessorStart.CheckpointOf("order-mails", "order-sms") })
+```
+
+| `StartFrom` | Starts at | Use it for |
+|---|---|---|
+| `ProcessorStart.Beginning` (default) | Position 0, the whole log | Projections, and reactors that must see history |
+| `ProcessorStart.Head` | The head when it first starts | A new side effect that should only fire for new events |
+| `ProcessorStart.CheckpointOf(ids)` | The lowest checkpoint of `ids` | Renaming or merging processors |
+
+What to know:
+
+- **The replica that takes the lease decides.** The start is written as the new id's checkpoint
+  the first time it runs, so other replicas and later restarts read that checkpoint.
+- **A merge starts at the lowest**, so the processor that was further ahead sees a stretch of
+  events again. Reactors are at-least-once anyway; make sure the handler is idempotent.
+- **An old id with no checkpoint counts as 0** and logs a warning: a typo in the old id replays
+  the log. Check the warning on the first deploy.
+- **The old checkpoint rows stay.** Roll the deploy back and the old processor resumes where it
+  stopped. The ids named in `CheckpointOf` count as claimed, so the
+  [orphan check](operations.md) does not flag them. Remove them with `ResetAsync` once you no
+  longer need the rollback.
+- **During a rolling deploy both run.** Old replicas keep handling events under the old id while
+  new ones start from its checkpoint, so events in that window can be handled by both. Stop the
+  old processor first if a double side effect is not acceptable.
+- **Rebuilds always replay.** A projection rebuild ignores `StartFrom` and starts at 0.
+- `StartFrom` is set in code only; it is not bound from configuration.
 
 ### Async vs sync
 
@@ -98,7 +165,7 @@ The outbox breaks that into two durable steps.
 event committed to the log
     ↓  OutboxHandler (a processor, with a checkpoint)
 row in alberto_outbox_entries, status = pending
-    ↓  OutboxRelay (a hosted service, polls every 1s)
+    ↓  OutboxRelay (a hosted service, woken by a local enqueue, else polls)
 claimed FOR UPDATE SKIP LOCKED, status = processing
 claim token + claim expiry stored on the row
     ↓  IMessageTransport.PublishAsync
@@ -111,10 +178,16 @@ holding the same live claim. Delivery remains at-least-once: if a publish succee
 dies before recording success, the entry is published again after its claim expires. It is also
 **unordered.** See [Ordering](#ordering-there-isnt-any) before you assume otherwise.
 
-Each claimed entry costs its own round trips: `PublishAsync`, then a separate `MarkDeliveredAsync`
-(or `MarkFailedAsync`) per message. Batching the claim does not batch the acknowledgements, so
-throughput is bounded by database latency per message, not per batch. Run more relay replicas if
-that becomes the limit.
+A batch costs one claim, one `PublishAsync` per message, and then one statement recording every
+delivery and one recording every failure (a store that cannot batch failures gets one
+`MarkAttemptFailedAsync` per failed entry instead). Both are flushed early once the batch has used
+half its claim lease, so a slow broker cannot let the claims they belong to expire first.
+
+The relay does not poll at a fixed rate while the table is empty. An entry written by the
+`OutboxHandler` in the same process wakes it at once; otherwise it backs off from the polling
+interval (default 1 s) by doubling, up to 5 seconds or the polling interval if that is longer.
+That ceiling is the worst-case delay for an entry written by another process, such as another
+replica's handler or an operator's `RetryFailedAsync`.
 
 ### Wiring it
 
@@ -186,10 +259,10 @@ until `retry_count` reaches the relay's `maxRetries` (default 5, `relayMaxRetrie
 `WithOutbox`); that failure parks it as `failed`. `RetryFailedAsync` (optionally filtered by
 message type) puts `failed` entries back to `pending` with a fresh retry count.
 
-The relay marks an entry `delivered` with its own short timeout, not the host's cancellation
-token, and a failure to write that mark is logged, never turned into a delivery failure: the claim
-lease expires and the entry is delivered again, which is the at-least-once contract. A
-`MarkDeliveredAsync` that returns `false` (the claim was lost) is logged too.
+The relay records deliveries and failures with its own short timeout, not the host's cancellation
+token, and a failure to write either is logged, never turned into a delivery failure: the claim
+lease expires and the entry is delivered again, which is the at-least-once contract. An entry whose
+claim was lost before the mark is logged too.
 
 `StartAsync` completes before the relay makes its first claim or publish call. Once Alberto invokes
 it, Alberto makes exactly one `StopAsync` call after the last relay exits, including when startup

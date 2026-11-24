@@ -1,11 +1,13 @@
 using Alberto.Tenancy;
-using FluentAssertions;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Alberto.Tests.Tenancy;
 
 public class TenantShardResolverTests
 {
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
     private static readonly HashSet<string> TwoShards = new(["db1", "db2"], StringComparer.Ordinal);
 
     private static TenantShardResolver Resolver(
@@ -22,10 +24,10 @@ public class TenantShardResolverTests
 
         await refresher.StartAsync(TestContext.Current.CancellationToken);
         // ExecuteAsync starts on the thread pool: stopping before it runs would cancel a task that never started.
-        SpinWait.SpinUntil(() => Volatile.Read(ref map.GetAllCalls) > 0, TimeSpan.FromSeconds(10)).Should().BeTrue();
+        Assert.True(SpinWait.SpinUntil(() => Volatile.Read(ref map.GetAllCalls) > 0, TimeSpan.FromSeconds(10)));
         await refresher.StopAsync(TestContext.Current.CancellationToken);
 
-        refresher.ExecuteTask!.Status.Should().Be(TaskStatus.RanToCompletion);
+        Assert.Equal(TaskStatus.RanToCompletion, refresher.ExecuteTask!.Status);
     }
 
     [Fact]
@@ -33,7 +35,7 @@ public class TenantShardResolverTests
     {
         var map = new FakeTenantShardMap().Assign("acme", "db2");
 
-        (await Resolver(map).ResolveAsync("acme")).Should().Be("db2");
+        Assert.Equal("db2", await Resolver(map).ResolveAsync("acme"));
     }
 
     [Fact]
@@ -46,7 +48,7 @@ public class TenantShardResolverTests
         await resolver.ResolveAsync("acme");
         await resolver.ResolveAsync("acme");
 
-        map.ResolveCalls.Should().Be(1);
+        Assert.Equal(1, map.ResolveCalls);
     }
 
     [Fact]
@@ -65,8 +67,8 @@ public class TenantShardResolverTests
         map.Gate.SetResult();
         var results = await Task.WhenAll(racers);
 
-        results.Should().AllBe("db1");
-        map.ResolveCalls.Should().Be(1);
+        Assert.All(results, item => Assert.Equal("db1", item));
+        Assert.Equal(1, map.ResolveCalls);
     }
 
     [Fact]
@@ -79,7 +81,7 @@ public class TenantShardResolverTests
         foreach (var id in Enumerable.Range(0, 50))
             await resolver.ResolveAsync($"ghost-{id}").AsTask().ContinueWith(_ => { });
 
-        resolver.GateCount.Should().Be(0);
+        Assert.Equal(0, resolver.GateCount);
     }
 
     [Fact]
@@ -95,7 +97,8 @@ public class TenantShardResolverTests
         foreach (var id in Enumerable.Range(0, 200))
             await resolver.ResolveAsync($"t{id}");
 
-        map.ResolveCalls.Should().Be(200, "a Remember that loses a race would force a second catalog read");
+        // a Remember that loses a race would force a second catalog read
+        Assert.Equal(200, map.ResolveCalls);
     }
 
     [Fact]
@@ -103,9 +106,9 @@ public class TenantShardResolverTests
     {
         var map = new FakeTenantShardMap();
 
-        (await Resolver(map, defaultShardId: "db1").ResolveAsync("newco")).Should().Be("db1");
+        Assert.Equal("db1", await Resolver(map, defaultShardId: "db1").ResolveAsync("newco"));
 
-        (await map.GetAllAsync()).Should().Contain(new KeyValuePair<string, string>("newco", "db1"));
+        Assert.Contains(new KeyValuePair<string, string>("newco", "db1"), await map.GetAllAsync());
     }
 
     [Fact]
@@ -115,10 +118,10 @@ public class TenantShardResolverTests
 
         var resolve = async () => await Resolver(map).ResolveAsync("newco");
 
-        var exception = await resolve.Should().ThrowAsync<UnknownTenantException>();
-        exception.Which.TenantId.Should().Be("newco");
-        exception.Which.ModuleKey.Should().Be("orders");
-        map.AssignCalls.Should().Be(0);
+        var exception = await Assert.ThrowsAnyAsync<UnknownTenantException>(resolve);
+        Assert.Equal("newco", exception.TenantId);
+        Assert.Equal("orders", exception.ModuleKey);
+        Assert.Equal(0, map.AssignCalls);
     }
 
     [Fact]
@@ -130,7 +133,7 @@ public class TenantShardResolverTests
 
         var resolver = Resolver(new WriteOnlyOnFirstRead(map), defaultShardId: "db1");
 
-        (await resolver.ResolveAsync("newco")).Should().Be("db2");
+        Assert.Equal("db2", await resolver.ResolveAsync("newco"));
     }
 
     [Fact]
@@ -143,11 +146,11 @@ public class TenantShardResolverTests
 
         var resolve = async () => await resolver.ResolveAsync("retired");
 
-        var exception = await resolve.Should().ThrowAsync<ShardUnavailableException>();
-        exception.Which.ShardId.Should().Be("db9");
+        var exception = await Assert.ThrowsAnyAsync<ShardUnavailableException>(resolve);
+        Assert.Equal("db9", exception.ShardId);
 
         // The rest of the module keeps working — that is the whole point of failing per tenant.
-        (await resolver.ResolveAsync("acme")).Should().Be("db1");
+        Assert.Equal("db1", await resolver.ResolveAsync("acme"));
     }
 
     [Fact]
@@ -156,12 +159,12 @@ public class TenantShardResolverTests
         var map = new FakeTenantShardMap().Assign("acme", "db1");
         var resolver = Resolver(map);
 
-        (await resolver.ResolveAsync("acme")).Should().Be("db1");
+        Assert.Equal("db1", await resolver.ResolveAsync("acme"));
 
         map.Assign("acme", "db2");
         await resolver.RefreshAsync();
 
-        (await resolver.ResolveAsync("acme")).Should().Be("db2");
+        Assert.Equal("db2", await resolver.ResolveAsync("acme"));
     }
 
     [Fact]
@@ -171,9 +174,66 @@ public class TenantShardResolverTests
         var resolver = Resolver(map);
 
         await resolver.RefreshAsync();
-        (await resolver.ResolveAsync("acme")).Should().Be("db2");
+        Assert.Equal("db2", await resolver.ResolveAsync("acme"));
 
-        map.ResolveCalls.Should().Be(0);
+        Assert.Equal(0, map.ResolveCalls);
+    }
+
+    [Fact]
+    public async Task A_repeated_unknown_tenant_is_refused_without_a_catalog_read_until_the_ttl_passes()
+    {
+        var map = new FakeTenantShardMap();
+        var time = new FakeTimeProvider();
+        var resolver = new TenantShardResolver("orders", map, TwoShards, null, null, time);
+
+        foreach (var _ in Enumerable.Range(0, 5))
+            await Assert.ThrowsAnyAsync<UnknownTenantException>(((Func<Task>)(async () => await resolver.ResolveAsync("ghost", Ct))));
+        Assert.Equal(1, map.ResolveCalls);
+
+        // Another process assigns the tenant after our miss: it resolves once the refusal expires.
+        map.Assign("ghost", "db2");
+        time.Advance(TenantShardResolver.UnknownTenantTtl);
+
+        Assert.Equal("db2", await resolver.ResolveAsync("ghost", Ct));
+        Assert.Equal(2, map.ResolveCalls);
+    }
+
+    [Fact]
+    public async Task A_catalog_read_that_fails_is_not_cached_as_unknown()
+    {
+        var map = new FailingOnceMap(new FakeTenantShardMap());
+        var resolver = Resolver(map);
+
+        await Assert.ThrowsAnyAsync<InvalidOperationException>(((Func<Task>)(async () => await resolver.ResolveAsync("ghost", Ct))));
+        await Assert.ThrowsAnyAsync<UnknownTenantException>(((Func<Task>)(async () => await resolver.ResolveAsync("ghost", Ct))));
+
+        Assert.Equal(2, map.ResolveCalls);
+    }
+
+    [Fact]
+    public async Task The_unknown_tenant_cache_stays_within_its_capacity()
+    {
+        var resolver = Resolver(new FakeTenantShardMap());
+
+        foreach (var id in Enumerable.Range(0, TenantShardResolver.UnknownTenantCacheCapacity + 10))
+            await resolver.ResolveAsync($"ghost-{id}", Ct).AsTask().ContinueWith(_ => { }, Ct);
+
+        Assert.InRange(resolver.UnknownTenantCount, 1, TenantShardResolver.UnknownTenantCacheCapacity);
+    }
+
+    [Fact]
+    public async Task A_refresh_that_brings_in_an_unknown_tenant_makes_it_resolve_at_once()
+    {
+        var map = new FakeTenantShardMap();
+        var resolver = new TenantShardResolver("orders", map, TwoShards, null, null, new FakeTimeProvider());
+
+        await Assert.ThrowsAnyAsync<UnknownTenantException>(((Func<Task>)(async () => await resolver.ResolveAsync("ghost", Ct))));
+
+        map.Assign("ghost", "db1");
+        await resolver.RefreshAsync(Ct);
+
+        Assert.Equal("db1", await resolver.ResolveAsync("ghost", Ct));
+        Assert.Equal(0, resolver.UnknownTenantCount);
     }
 
     [Fact]
@@ -181,7 +241,23 @@ public class TenantShardResolverTests
     {
         var construct = () => new TenantShardResolver("orders", null!, TwoShards, null);
 
-        construct.Should().Throw<ArgumentNullException>();
+        Assert.ThrowsAny<ArgumentNullException>(construct);
+    }
+
+    private sealed class FailingOnceMap(FakeTenantShardMap inner) : ITenantShardMap
+    {
+        public int ResolveCalls;
+
+        public ValueTask<string?> ResolveAsync(string tenantId, CancellationToken cancellationToken = default) =>
+            Interlocked.Increment(ref ResolveCalls) == 1
+                ? throw new InvalidOperationException("catalog unavailable")
+                : inner.ResolveAsync(tenantId, cancellationToken);
+
+        public ValueTask<string> AssignAsync(string tenantId, string shardId, CancellationToken cancellationToken = default) =>
+            inner.AssignAsync(tenantId, shardId, cancellationToken);
+
+        public ValueTask<IReadOnlyDictionary<string, string>> GetAllAsync(CancellationToken cancellationToken = default) =>
+            inner.GetAllAsync(cancellationToken);
     }
 
     /// <summary>

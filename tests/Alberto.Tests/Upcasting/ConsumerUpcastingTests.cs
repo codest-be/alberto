@@ -4,7 +4,6 @@ using Alberto.Messaging;
 using Alberto.Projections;
 using Alberto.Subscriptions;
 using Alberto.Upcasting;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -122,8 +121,8 @@ public sealed class DeclaredProjectionUpcastingTests
         // Assert: the handler received the upcasted V2 shape.
         // If the fix is missing, Country is null (raw JSON shape has no Country field).
         var states = await stateStore.LoadManyAsync([orderId.ToString()], CancellationToken.None);
-        states.Should().ContainKey(orderId.ToString());
-        states[orderId.ToString()].Country.Should().Be("upcasted-country");
+        Assert.Contains(orderId.ToString(), states);
+        Assert.Equal("upcasted-country", states[orderId.ToString()].Country);
     }
 }
 
@@ -165,7 +164,7 @@ public sealed class FunctionalReactorUpcastingTests
 
         // Assert: the handler received the upcasted V2 shape.
         // If the fix is missing, Country is null (raw JSON shape has no Country field).
-        observedCountry.Should().Be("upcasted-country");
+        Assert.Equal("upcasted-country", observedCountry);
     }
 }
 
@@ -206,7 +205,7 @@ public sealed class SyncReactorUpcastingTests
 
         // Assert: the handler received the upcasted V2 shape.
         // If the fix is missing, Country is null (raw JSON shape has no Country field).
-        observedCountry.Should().Be("upcasted-country");
+        Assert.Equal("upcasted-country", observedCountry);
     }
 }
 
@@ -248,8 +247,8 @@ public sealed class OutboxMessageMappingUpcastingTests
 
         // Assert: the mapper received the upcasted V2 shape.
         // If the fix is missing, Country is null (raw JSON shape has no Country field).
-        result.Should().NotBeNull();
+        Assert.NotNull(result);
         var mapped = JsonSerializer.Deserialize<ConsumerOrderMessage>(result!.Payload);
-        mapped!.Country.Should().Be("upcasted-country");
+        Assert.Equal("upcasted-country", mapped!.Country);
     }
 }

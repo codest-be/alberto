@@ -1,7 +1,6 @@
 using Alberto.Postgres;
 using Alberto.Tests.Infrastructure;
 using Alberto.Tests.Subscriptions;
-using FluentAssertions;
 using Npgsql;
 using Xunit;
 
@@ -90,10 +89,7 @@ public sealed class AppendAdvisoryLockTests(PostgresCluster cluster)
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         await reader.ReadAsync(cancellationToken);
 
-        reader.GetInt64(0).Should().NotBe(reader.GetInt64(1),
-            because: $"'{key1}' and '{key2}' share a hashtext value, so under the old " +
-                     "pg_advisory_xact_lock(1, hashtext(key)) form these two tenants' appends " +
-                     "serialized against each other; hashtextextended must separate them");
+        Assert.NotEqual(reader.GetInt64(1), reader.GetInt64(0));
     }
 
     /// <summary>
@@ -135,9 +131,7 @@ public sealed class AppendAdvisoryLockTests(PostgresCluster cluster)
 
         var acquireSecond = async () => await AcquireAppendLockAsync(second, tx2, key2, cancellationToken);
 
-        await acquireSecond.Should().NotThrowAsync(
-            because: $"'{key1}' and '{key2}' are different tenants — they collide only under " +
-                     "hashtext's 32 bits, and the append lock must not serialize them");
+        await acquireSecond();
     }
 
     /// <summary>
@@ -170,10 +164,9 @@ public sealed class AppendAdvisoryLockTests(PostgresCluster cluster)
 
         var acquireSecond = async () => await AcquireAppendLockAsync(second, tx2, sharedKey, cancellationToken);
 
-        (await acquireSecond.Should().ThrowAsync<PostgresException>(
-                because: "two appends under the same key must not evaluate the DCB conflict " +
-                         "check concurrently"))
-            .Which.SqlState.Should().Be(PostgresErrorCodes.LockNotAvailable);
+        // two appends under the same key must not evaluate the DCB conflict check concurrently
+        var exception = await Assert.ThrowsAnyAsync<PostgresException>(acquireSecond);
+        Assert.Equal(PostgresErrorCodes.LockNotAvailable, exception.SqlState);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
@@ -195,8 +188,7 @@ public sealed class AppendAdvisoryLockTests(PostgresCluster cluster)
 
         // No collision among 500k keys in a 32-bit space would mean the search is broken, not
         // that the risk is absent — so this is a failure rather than a skip.
-        (await reader.ReadAsync(cancellationToken)).Should().BeTrue(
-            because: $"{CandidateKeys:N0} keys in hashtext's 32-bit space collide with " +
+        Assert.True((await reader.ReadAsync(cancellationToken)), $"{CandidateKeys:N0} keys in hashtext's 32-bit space collide with " +
                      "overwhelming probability");
 
         return (reader.GetString(0), reader.GetString(1));

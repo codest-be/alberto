@@ -1,7 +1,6 @@
 using Alberto.Configuration;
 using Alberto.DeadLetters;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
@@ -169,12 +168,12 @@ public sealed class DeadLetterWriteFailureTests
         // Assert — the middleware must NOT throw despite StoreAsync throwing.
         // If this assertion fails it means a transient dead-letter write error would
         // have escaped to DispatchBatchAsync, preventing the checkpoint from advancing.
-        await act.Should().NotThrowAsync(
-            because: "a failing dead-letter write must not propagate — that would strand " +
-                     "already-processed events and cause silent double-delivery on restart");
+        // a failing dead-letter write must not propagate — that would strand already-processed events and
+        // cause silent double-delivery on restart
+        await act();
 
         // The event is still counted as dead-lettered even though the store write failed.
-        context.DeadLetteredCount.Should().Be(1);
+        Assert.Equal(1, context.DeadLetteredCount);
     }
 
     [Fact]
@@ -193,14 +192,14 @@ public sealed class DeadLetterWriteFailureTests
         var run = MiddlewareRunner.RunAsync(
             context, [middleware], () => throw new InvalidOperationException("processor failure"));
 
-        store.StoreCallCount.Should().Be(1);
-        run.IsCompleted.Should().BeFalse("the 100 ms backoff must wait on the fake clock, not wall time");
+        Assert.Equal(1, store.StoreCallCount);
+        Assert.False(run.IsCompleted, "the 100 ms backoff must wait on the fake clock, not wall time");
 
         clock.Advance(TimeSpan.FromMilliseconds(100));
         clock.Advance(TimeSpan.FromMilliseconds(200));
         await run;
 
-        store.StoreCallCount.Should().Be(RetryAndDeadLetterCore.DeadLetterWriteMaxAttempts);
+        Assert.Equal(RetryAndDeadLetterCore.DeadLetterWriteMaxAttempts, store.StoreCallCount);
     }
 
     /// <summary>
@@ -235,20 +234,20 @@ public sealed class DeadLetterWriteFailureTests
             .Where(e => e.Level == LogLevel.Error)
             .ToList();
 
-        errorEntries.Should().NotBeEmpty(
-            because: "a failing dead-letter write must be logged at error level");
+        // a failing dead-letter write must be logged at error level
+        Assert.NotEmpty(errorEntries);
 
         var errorEntry = errorEntries[0];
 
         // The log message must name the event and the processor so operators can act.
-        errorEntry.Message.Should().Contain(envelopes[0].Id.ToString(),
-            because: "the error log must identify which event was dropped from the dead-letter queue");
-        errorEntry.Message.Should().Contain("test-processor",
-            because: "the error log must identify which processor dropped the event");
+        // the error log must identify which event was dropped from the dead-letter queue
+        Assert.Contains(envelopes[0].Id.ToString(), errorEntry.Message);
+        // the error log must identify which processor dropped the event
+        Assert.Contains("test-processor", errorEntry.Message);
 
         // The original exception must be attached so the stack trace is visible in log sinks.
-        errorEntry.Exception.Should().NotBeNull(
-            because: "the original StoreAsync exception must be forwarded so its stack trace is visible");
+        // the original StoreAsync exception must be forwarded so its stack trace is visible
+        Assert.NotNull(errorEntry.Exception);
     }
 
     /// <summary>
@@ -278,8 +277,8 @@ public sealed class DeadLetterWriteFailureTests
 
         // Assert — 3 attempts (1 initial + 2 retries) before the loop gives up.
         // This constant matches RetryAndDeadLetterCore.DeadLetterWriteMaxAttempts.
-        store.StoreCallCount.Should().Be(3,
-            because: "the bounded retry must attempt the write exactly 3 times before giving up");
+        // the bounded retry must attempt the write exactly 3 times before giving up
+        Assert.Equal(3, store.StoreCallCount);
     }
 
     // ── single-event dispatch ────────────────────────────────────────────────
@@ -309,12 +308,12 @@ public sealed class DeadLetterWriteFailureTests
                 [middleware],
                 () => throw new InvalidOperationException("processor failure"));
 
-        await act.Should().NotThrowAsync(
-            because: "a failing dead-letter write must not propagate — that would strand " +
-                     "already-processed events and cause silent double-delivery on restart");
+        // a failing dead-letter write must not propagate — that would strand already-processed events and
+        // cause silent double-delivery on restart
+        await act();
 
         // The event is still counted as dead-lettered even though the store write failed.
-        context.DeadLettered.Should().BeTrue();
+        Assert.True(context.DeadLettered);
     }
 
     [Fact]
@@ -341,17 +340,17 @@ public sealed class DeadLetterWriteFailureTests
             .Where(e => e.Level == LogLevel.Error)
             .ToList();
 
-        errorEntries.Should().NotBeEmpty(
-            because: "a failing dead-letter write must be logged at error level");
+        // a failing dead-letter write must be logged at error level
+        Assert.NotEmpty(errorEntries);
 
         var errorEntry = errorEntries[0];
 
-        errorEntry.Message.Should().Contain(envelope.Id.ToString(),
-            because: "the error log must identify which event was dropped from the dead-letter queue");
-        errorEntry.Message.Should().Contain("test-processor",
-            because: "the error log must identify which processor dropped the event");
-        errorEntry.Exception.Should().NotBeNull(
-            because: "the original StoreAsync exception must be forwarded so its stack trace is visible");
+        // the error log must identify which event was dropped from the dead-letter queue
+        Assert.Contains(envelope.Id.ToString(), errorEntry.Message);
+        // the error log must identify which processor dropped the event
+        Assert.Contains("test-processor", errorEntry.Message);
+        // the original StoreAsync exception must be forwarded so its stack trace is visible
+        Assert.NotNull(errorEntry.Exception);
     }
 
     [Fact]
@@ -372,9 +371,9 @@ public sealed class DeadLetterWriteFailureTests
             [middleware],
             () => throw new InvalidOperationException("processor failure"));
 
-        store.StoreCallCount.Should().Be(3,
-            because: "both dispatch paths share the same bounded retry, so both must attempt " +
-                     "the write exactly 3 times before giving up");
+        // both dispatch paths share the same bounded retry, so both must attempt the write exactly 3
+        // times before giving up
+        Assert.Equal(3, store.StoreCallCount);
     }
 
     // ── classifier ────────────────────────────────────────────────────────────

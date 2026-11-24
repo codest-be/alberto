@@ -54,7 +54,7 @@ public sealed class EventStoreTests
     }
 
     [Fact]
-    public async Task AppendAsync_ProjectionFailure_SkipsPostAppendHandlersButKeepsPersistedEvent()
+    public async Task AppendAsync_ProjectionFailure_AbortsTheAppendAndSkipsPostAppendHandlers()
     {
         var handler = new RecordingPostAppendHandler([]);
         var eventStore = new EventStore(
@@ -70,7 +70,7 @@ public sealed class EventStoreTests
         Assert.Empty(handler.Received);
         var persisted = await eventStore.StreamAllAsync(
             cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
-        Assert.Single(persisted);
+        Assert.Empty(persisted);
     }
 
     private sealed class RecordingProjection(List<string> calls) : IInlineProjection
@@ -82,6 +82,7 @@ public sealed class EventStoreTests
 
         public Task ProcessAsync(
             IReadOnlyList<IEventEnvelope> events,
+            AppendTransaction transaction,
             CancellationToken cancellationToken = default)
         {
             calls.Add("projection");
@@ -114,6 +115,7 @@ public sealed class EventStoreTests
 
         public Task ProcessAsync(
             IReadOnlyList<IEventEnvelope> events,
+            AppendTransaction transaction,
             CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("projection failed");
     }
@@ -164,7 +166,8 @@ public sealed class EventStoreTests
 
         public IReadOnlySet<string> HandledEventTypes { get; }
 
-        public Task ProcessAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
+        public Task ProcessAsync(
+            IReadOnlyList<IEventEnvelope> events, AppendTransaction transaction, CancellationToken cancellationToken = default)
             => _inner.ProcessBatchAsync(events, cancellationToken);
     }
 

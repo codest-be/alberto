@@ -2,7 +2,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Alberto.Tests.SampleEvents;
 using Alberto.Upcasting;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests;
@@ -22,8 +21,8 @@ public sealed class GeneratedEvolverTests
     {
         IGeneratedEvolver<SampleState> generated = new SampleEvolver();
 
-        generated.GeneratedFor.Should().Be<SampleEvolver>();
-        generated.EvolveTable().Select(h => h.EventType).Should().Equal(typeof(PlainNote), typeof(VersionedOrder));
+        Assert.Equal(typeof(SampleEvolver), generated.GeneratedFor);
+        Assert.Equal([typeof(PlainNote), typeof(VersionedOrder)], generated.EvolveTable().Select(h => h.EventType));
     }
 
     [Fact]
@@ -34,10 +33,9 @@ public sealed class GeneratedEvolverTests
         var generated = new SampleEvolver();
         var reflected = new ReflectedTwin();
 
-        generated.HandledEventTypes.Should().BeEquivalentTo(reflected.HandledEventTypes);
-        history.Aggregate(new SampleState(), generated.Evolve)
-            .Should().Be(history.Aggregate(new SampleState(), reflected.Evolve))
-            .And.Be(new SampleState { Notes = 2, Total = 25m, LastCountry = "NL" });
+        Assert.Equivalent(reflected.HandledEventTypes, generated.HandledEventTypes, strict: true);
+        Assert.Equal(history.Aggregate(new SampleState(), reflected.Evolve), history.Aggregate(new SampleState(), generated.Evolve));
+        Assert.Equal(new SampleState { Notes = 2, Total = 25m, LastCountry = "NL" }, history.Aggregate(new SampleState(), generated.Evolve));
     }
 
     [Fact]
@@ -45,9 +43,11 @@ public sealed class GeneratedEvolverTests
     {
         var evolver = new TableDisagrees();
 
-        evolver.HandledEventTypes.Should().Equal("e2e-plain-note");
-        evolver.Evolve(new SampleState(), Note).Notes.Should().Be(100, "the table's handler ran, not Apply");
-        evolver.Evolve(new SampleState(), Order).Should().Be(new SampleState(), "the table does not list it");
+        Assert.Equal(["e2e-plain-note"], evolver.HandledEventTypes);
+        // the table's handler ran, not Apply
+        Assert.Equal(100, evolver.Evolve(new SampleState(), Note).Notes);
+        // the table does not list it
+        Assert.Equal(new SampleState(), evolver.Evolve(new SampleState(), Order));
     }
 
     [Fact]
@@ -55,9 +55,9 @@ public sealed class GeneratedEvolverTests
     {
         var evolver = new DerivedFromGenerated();
 
-        evolver.HandledEventTypes.Should().BeEquivalentTo("e2e-plain-note", "e2e-versioned-order", "generated-evolver-extra");
-        evolver.Evolve(new SampleState(), new ExtraNote("x")).LastCountry.Should().Be("extra");
-        evolver.Evolve(new SampleState(), Order).Total.Should().Be(12.5m);
+        Assert.Equivalent(new[] { "e2e-plain-note", "e2e-versioned-order", "generated-evolver-extra" }, evolver.HandledEventTypes, strict: true);
+        Assert.Equal("extra", evolver.Evolve(new SampleState(), new ExtraNote("x")).LastCountry);
+        Assert.Equal(12.5m, evolver.Evolve(new SampleState(), Order).Total);
     }
 
     // ---- upcasters reading the old shape with their own JsonTypeInfo ---------------------------
@@ -88,7 +88,7 @@ public sealed class GeneratedEvolverTests
         var upcast = serializer.Deserialize(new Envelope(
             "e2e-versioned-order", 1, $$"""{"order_id":"{{orderId:D}}","amount":7.5}"""));
 
-        upcast.Should().Be(new VersionedOrder(orderId, 7.5m, "BE"));
+        Assert.Equal(new VersionedOrder(orderId, 7.5m, "BE"), upcast);
     }
 
     [Fact]
@@ -96,10 +96,10 @@ public sealed class GeneratedEvolverTests
     {
         var builder = DeclareUpcaster.For<VersionedOrder>("e2e-versioned-order");
 
-        builder.Invoking(b => b.From<VersionedOrderV1>(1, null!, v1 => Order))
-            .Should().Throw<ArgumentNullException>().WithParameterName("oldShape");
-        builder.Invoking(b => b.From<VersionedOrderV1, VersionedOrder>(1, null!, v1 => Order))
-            .Should().Throw<ArgumentNullException>().WithParameterName("oldShape");
+        var exception = Assert.ThrowsAny<ArgumentNullException>(() => builder.From<VersionedOrderV1>(1, null!, v1 => Order));
+        Assert.Equal("oldShape", exception.ParamName);
+        var exception2 = Assert.ThrowsAny<ArgumentNullException>(() => builder.From<VersionedOrderV1, VersionedOrder>(1, null!, v1 => Order));
+        Assert.Equal("oldShape", exception2.ParamName);
     }
 
     private sealed record Envelope(string Slug, int Version, string EventData) : IEventEnvelope

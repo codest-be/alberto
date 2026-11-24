@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using Alberto.Append;
 using Alberto.Telemetry;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Telemetry;
@@ -40,10 +39,11 @@ public sealed class AppendSpanPrivacyTests
 
         var tags = AppendingEventTag(span, "alberto.event.tags");
 
-        tags.Should().Be("order,customer",
-            "the concept names identify the consistency boundary without naming the entities");
-        tags.Should().NotContain("8f21").And.NotContain("4471",
-            "tag ids are domain identifiers and must not leave the process by default");
+        // the concept names identify the consistency boundary without naming the entities
+        Assert.Equal("order,customer", tags);
+        Assert.DoesNotContain("8f21", tags);
+        // tag ids are domain identifiers and must not leave the process by default
+        Assert.DoesNotContain("4471", tags);
     }
 
     [Fact]
@@ -55,7 +55,7 @@ public sealed class AppendSpanPrivacyTests
         var span = await CaptureAppendSpanFor(eventId, () =>
             interceptor.OnAppendingAsync(ContextFor(eventId), _ => Task.FromResult(NoResult)));
 
-        AppendingEventTag(span, "alberto.event.tags").Should().Be("order:8f21,customer:4471");
+        Assert.Equal("order:8f21,customer:4471", AppendingEventTag(span, "alberto.event.tags"));
     }
 
     [Fact]
@@ -70,7 +70,7 @@ public sealed class AppendSpanPrivacyTests
         var span = await CaptureAppendSpanFor(eventId, () =>
             interceptor.OnAppendingAsync(context, _ => Task.FromResult(NoResult)));
 
-        AppendingEventTag(span, "alberto.event.tags").Should().Be("order");
+        Assert.Equal("order", AppendingEventTag(span, "alberto.event.tags"));
     }
 
     [Fact]
@@ -86,19 +86,19 @@ public sealed class AppendSpanPrivacyTests
                 ContextFor(eventId),
                 _ => throw new InvalidOperationException(secret));
 
-            await act.Should().ThrowAsync<InvalidOperationException>();
+            await Assert.ThrowsAnyAsync<InvalidOperationException>(act);
         });
 
-        span.Should().NotBeNull();
+        Assert.NotNull(span);
 
-        span!.TagObjects.Select(t => t.Key).Should()
-            .NotContain("exception.message").And.NotContain("exception.stacktrace",
-                "exception detail as a span attribute survives every collector that only scrubs events");
+        Assert.DoesNotContain("exception.message", span!.TagObjects.Select(t => t.Key));
+        // exception detail as a span attribute survives every collector that only scrubs events
+        Assert.DoesNotContain("exception.stacktrace", span!.TagObjects.Select(t => t.Key));
 
         var exceptionEvent = span.Events.SingleOrDefault(e => e.Name == "exception");
-        exceptionEvent.Name.Should().Be("exception",
-            "Activity.AddException emits the OTel-conventional event collectors already handle");
-        exceptionEvent.Tags.Should().Contain(t =>
+        // Activity.AddException emits the OTel-conventional event collectors already handle
+        Assert.Equal("exception", exceptionEvent.Name);
+        Assert.Contains(exceptionEvent.Tags, t =>
             t.Key == "exception.type" && (string?)t.Value == typeof(InvalidOperationException).FullName);
     }
 
@@ -153,7 +153,8 @@ public sealed class AppendSpanPrivacyTests
 
     private static string? AppendingEventTag(Activity? span, string tagKey)
     {
-        span.Should().NotBeNull("the append span must have been recorded");
+        // the append span must have been recorded
+        Assert.NotNull(span);
 
         var appending = span!.Events.Single(e => e.Name == "alberto.event.appending");
         return (string?)appending.Tags.Single(t => t.Key == tagKey).Value;

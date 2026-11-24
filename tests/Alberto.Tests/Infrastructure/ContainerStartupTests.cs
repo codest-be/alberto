@@ -1,7 +1,6 @@
 using System.Net;
 using Alberto.TestInfrastructure;
 using Docker.DotNet;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Infrastructure;
@@ -44,8 +43,9 @@ public sealed class ContainerStartupTests
             retryDelay: TimeSpan.Zero,
             TestContext.Current.CancellationToken);
 
-        result.Should().Be(1);
-        built.Should().Be(1, because: "a start that works must not build a second container");
+        Assert.Equal(1, result);
+        // a start that works must not build a second container
+        Assert.Equal(1, built);
     }
 
     [Fact]
@@ -61,10 +61,10 @@ public sealed class ContainerStartupTests
             retryDelay: TimeSpan.Zero,
             TestContext.Current.CancellationToken);
 
-        attempts.Should().Be(3);
-        result.Should().Be(3, because:
-            "each attempt must start a newly built container — the host port is assigned at " +
-            "create time, so reusing the instance would ask for the same allocation again");
+        Assert.Equal(3, attempts);
+        // each attempt must start a newly built container — the host port is assigned at create time, so
+        // reusing the instance would ask for the same allocation again
+        Assert.Equal(3, result);
     }
 
     [Fact]
@@ -79,7 +79,7 @@ public sealed class ContainerStartupTests
             retryDelay: TimeSpan.Zero,
             TestContext.Current.CancellationToken);
 
-        attempts.Should().Be(2);
+        Assert.Equal(2, attempts);
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public sealed class ContainerStartupTests
             retryDelay: TimeSpan.Zero,
             TestContext.Current.CancellationToken);
 
-        attempts.Should().Be(2);
+        Assert.Equal(2, attempts);
     }
 
     [Fact]
@@ -111,10 +111,11 @@ public sealed class ContainerStartupTests
             retryDelay: TimeSpan.Zero,
             TestContext.Current.CancellationToken);
 
-        await start.Should().ThrowAsync<DockerApiException>(because:
-            "a host that is genuinely out of ports must fail the run, not retry indefinitely");
+        // a host that is genuinely out of ports must fail the run, not retry indefinitely
+        await Assert.ThrowsAnyAsync<DockerApiException>(start);
 
-        attempts.Should().Be(4, because: "the attempt budget is four, and the last one is not retried");
+        // the attempt budget is four, and the last one is not retried
+        Assert.Equal(4, attempts);
     }
 
     /// <summary>
@@ -138,8 +139,8 @@ public sealed class ContainerStartupTests
             retryDelay: TimeSpan.Zero,
             TestContext.Current.CancellationToken);
 
-        await start.Should().ThrowAsync<DockerApiException>();
-        attempts.Should().Be(1);
+        await Assert.ThrowsAnyAsync<DockerApiException>(start);
+        Assert.Equal(1, attempts);
     }
 
     [Fact]
@@ -155,7 +156,8 @@ public sealed class ContainerStartupTests
             retryDelay: TimeSpan.Zero,
             TestContext.Current.CancellationToken);
 
-        disposed.Should().HaveCount(2, because: "the two containers that failed to bind must be removed");
+        // the two containers that failed to bind must be removed
+        Assert.Equal(2, disposed.Count());
     }
 
     /// <summary>
@@ -174,7 +176,7 @@ public sealed class ContainerStartupTests
             retryDelay: TimeSpan.Zero,
             TestContext.Current.CancellationToken);
 
-        attempts.Should().Be(2);
-        result.Should().Be(1);
+        Assert.Equal(2, attempts);
+        Assert.Equal(1, result);
     }
 }

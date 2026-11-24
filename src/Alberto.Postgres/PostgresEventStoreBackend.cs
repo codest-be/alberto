@@ -19,7 +19,7 @@ internal sealed class PostgresEventStoreBackend(
     TimeProvider? timeProvider = null,
     string? schema = null,
     bool enableStableHeadBarrier = true)
-    : IEventStoreBackend, IEventStoreHeadBackend
+    : IEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
 {
     private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
     // _timeProvider is retained for future use and to preserve the constructor surface.
@@ -93,11 +93,27 @@ internal sealed class PostgresEventStoreBackend(
         => PostgresBackendHelpers.ReadAllOfTypesAsync(
             _schema, _dataSource, tenanted: false, eventTypes, afterPosition, limit, cancellationToken);
 
-    public async Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+    public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
         IEnumerable<IEventToPersist> events,
         DcbQuery? dcbQuery = null,
         long? expectedPosition = null,
         CancellationToken cancellationToken = default)
+        => AppendCoreAsync(events, dcbQuery, expectedPosition, inTransaction: null, cancellationToken);
+
+    public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+        IEnumerable<IEventToPersist> events,
+        DcbQuery? dcbQuery,
+        long? expectedPosition,
+        Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
+        CancellationToken cancellationToken = default)
+        => AppendCoreAsync(events, dcbQuery, expectedPosition, inTransaction, cancellationToken);
+
+    private async Task<IReadOnlyCollection<IEventEnvelope>> AppendCoreAsync(
+        IEnumerable<IEventToPersist> events,
+        DcbQuery? dcbQuery,
+        long? expectedPosition,
+        Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task>? inTransaction,
+        CancellationToken cancellationToken)
     {
         var eventsList = events.ToList();
         if (eventsList.Count == 0)
@@ -106,7 +122,7 @@ internal sealed class PostgresEventStoreBackend(
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         return await PostgresBackendHelpers.AppendCoreAsync(
             connection, _schema, _appendLockKey,
-            tenantId: null, eventsList, dcbQuery, expectedPosition, cancellationToken);
+            tenantId: null, eventsList, dcbQuery, expectedPosition, cancellationToken, inTransaction);
     }
 
     public async Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
@@ -135,4 +151,7 @@ internal sealed class PostgresEventStoreBackend(
     public Task<long> GetStableHeadUpToAsync(
         long afterPosition, long upToPosition, CancellationToken cancellationToken = default)
         => PostgresBackendHelpers.GetStableHeadAsync(_schema, _dataSource, _enableStableHeadBarrier, afterPosition, upToPosition, cancellationToken);
+
+    public Task<HeadSnapshot> GetHeadSnapshotAsync(long afterPosition, int windowSize, CancellationToken cancellationToken)
+        => PostgresBackendHelpers.GetHeadSnapshotAsync(_schema, _dataSource, _enableStableHeadBarrier, afterPosition, windowSize, cancellationToken);
 }

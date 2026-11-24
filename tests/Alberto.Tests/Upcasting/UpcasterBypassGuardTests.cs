@@ -1,6 +1,5 @@
 using System.Reflection;
 using System.Text.RegularExpressions;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests;
@@ -129,20 +128,7 @@ public sealed class UpcasterBypassGuardTests
                 violations.Add(relativePath);
         }
 
-        violations.Should().BeEmpty(
-            because:
-                "\n\nRaw JSON deserialization was found in src/ files not on the allow-list.\n\n" +
-                "OFFENDING FILES:\n" +
-                string.Join("\n", violations.Select(v => $"  {v}")) + "\n\n" +
-                "WHAT TO DO:\n" +
-                "  Option A — You are deserializing an event envelope payload.\n" +
-                "             Route through EventSerializer.Deserialize instead.\n" +
-                "             Inject EventSerializer where you need it.\n\n" +
-                "  Option B — You are deserializing genuinely non-event JSON\n" +
-                "             (projection state, metadata dict, CLI config, outbox payload).\n" +
-                "             Add the file to UpcasterBypassGuardTests.AllowedFiles with a\n" +
-                "             one-sentence justification naming the concrete type.\n" +
-                "             See CONTRIBUTING.md §\"Event deserialization rule\".\n");
+        Assert.Empty(violations);
     }
 
     /// <summary>
@@ -176,11 +162,7 @@ public sealed class UpcasterBypassGuardTests
                 stale.Add($"{relativePath} — file no longer contains a raw-deserialization call; remove from AllowedFiles");
         }
 
-        stale.Should().BeEmpty(
-            because:
-                "\n\nStale entries found in UpcasterBypassGuardTests.AllowedFiles.\n\n" +
-                string.Join("\n", stale.Select(s => $"  {s}")) + "\n\n" +
-                "Remove each stale entry from the AllowedFiles dictionary.\n");
+        Assert.Empty(stale);
     }
 
     // -------------------------------------------------------------------------

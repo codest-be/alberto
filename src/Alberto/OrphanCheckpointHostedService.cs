@@ -38,8 +38,10 @@ internal sealed class OrphanCheckpointHostedService(
             return;
         }
 
+        // A processor that took over another's checkpoint claims the old row: it stays in place
+        // so a rolled-back deploy brings the old processor back where it stopped.
         var declared = definition.Processors
-            .Select(p => p.ProcessorId)
+            .SelectMany(p => p.Execution.StartFrom.TakesOverFrom.Prepend(p.ProcessorId))
             .ToHashSet(StringComparer.Ordinal);
 
         IReadOnlyList<string> stored;

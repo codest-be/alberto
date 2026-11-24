@@ -488,6 +488,136 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
         Assert.True(reader.IsDBNull(3));
     }
 
+    [Fact]
+    public async Task MarkAttemptsFailedAsync_AppliesEachFailure_AndSkipsLostClaims()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var store = CreateStore();
+        var retrying = MakeEntry();
+        var exhausted = MakeEntry();
+        var expired = MakeEntry();
+        var superseded = MakeEntry();
+        foreach (var entry in new[] { retrying, exhausted, expired, superseded })
+            await store.InsertAsync(entry, cancellationToken);
+        await SetRetryCountAsync(exhausted.Id, 2, cancellationToken);
+
+        var claims = (await ClaimAsync(store, 100, cancellationToken)).ToDictionary(c => c.Entry.Id);
+        // superseded: expired and re-claimed under a new token. expired: still its own token,
+        // rejected by the lease check alone.
+        await ExpireClaimAsync(superseded.Id, cancellationToken);
+        var current = (await ClaimAsync(CreateStore(), 100, cancellationToken))
+            .Single(c => c.Entry.Id == superseded.Id);
+        await ExpireClaimAsync(expired.Id, cancellationToken);
+
+        var marked = await ((IOutboxFailureBatchStore)store).MarkAttemptsFailedAsync(
+            [
+                new(claims[retrying.Id], "error one"),
+                new(claims[exhausted.Id], "error two"),
+                new(claims[expired.Id], "late"),
+                new(claims[superseded.Id], "stale"),
+            ],
+            maxRetries: 3,
+            cancellationToken);
+
+        Assert.Equal(new HashSet<Guid> { retrying.Id, exhausted.Id }, marked.ToHashSet());
+        Assert.Equal(("pending", 1, "error one"), await ReadAttemptAsync(retrying.Id, cancellationToken));
+        Assert.Equal(("failed", 3, "error two"), await ReadAttemptAsync(exhausted.Id, cancellationToken));
+        Assert.Equal(("processing", 0, null), await ReadAttemptAsync(expired.Id, cancellationToken));
+        Assert.Equal(("processing", 0, null), await ReadAttemptAsync(superseded.Id, cancellationToken));
+        Assert.True(await store.MarkDeliveredAsync(current, cancellationToken));
+    }
+
+    [Fact]
+    public async Task RetryFailedAsync_MovesOnlyFailedEntries()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var store = CreateStore();
+        var type = $"retry-only-failed-{Guid.NewGuid():N}";
+        var pending = MakeEntry(type);
+        var processing = MakeEntry(type);
+        var delivered = MakeEntry(type);
+        var failed = MakeEntry(type);
+        foreach (var entry in new[] { processing, delivered, failed })
+            await store.InsertAsync(entry, cancellationToken);
+        var claims = (await ClaimAsync(store, 100, cancellationToken)).ToDictionary(c => c.Entry.Id);
+        Assert.True(await store.MarkDeliveredAsync(claims[delivered.Id], cancellationToken));
+        Assert.True(await store.MarkFailedAsync(claims[failed.Id], "boom", cancellationToken));
+        await store.InsertAsync(pending, cancellationToken);
+
+        await store.RetryFailedAsync(type, cancellationToken);
+
+        Assert.Equal("pending", await ReadStatusAsync(failed.Id, cancellationToken));
+        Assert.Equal("pending", await ReadStatusAsync(pending.Id, cancellationToken));
+        Assert.Equal("processing", await ReadStatusAsync(processing.Id, cancellationToken));
+        Assert.Equal("delivered", await ReadStatusAsync(delivered.Id, cancellationToken));
+    }
+
+    [Theory]
+    [InlineData("WHERE status = 'failed' AND message_type = 'order-created'")]
+    [InlineData("WHERE status = 'failed'")]
+    public async Task RetryFailedAsync_Predicates_UseTheFailedIndex(string predicate)
+    {
+        var plan = await ExplainAsync(
+            $"UPDATE alberto_outbox_entries SET status = 'pending' {predicate}",
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains(plan, line => line.Contains("idx_alberto_outbox_failed", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 013 drops <c>idx_alberto_dead_letter_processor</c>; every per-processor query of
+    /// <c>PostgresDeadLetterStore</c> filters on <c>processor_id</c> alone, which the leading
+    /// column of the unique <c>(processor_id, event_id)</c> index serves.
+    /// </summary>
+    [Theory]
+    [InlineData("SELECT count(*) FROM alberto_dead_letter_events WHERE processor_id = 'p'")]
+    [InlineData("SELECT * FROM alberto_dead_letter_events WHERE processor_id = 'p' ORDER BY failed_at DESC LIMIT 100")]
+    [InlineData("DELETE FROM alberto_dead_letter_events WHERE processor_id = 'p'")]
+    [InlineData("UPDATE alberto_dead_letter_events SET retry_requested = TRUE WHERE processor_id = 'p'")]
+    public async Task DeadLetterProcessorQueries_UseTheUniqueIndex_AfterTheDrop(string query)
+    {
+        var plan = await ExplainAsync(query, TestContext.Current.CancellationToken);
+
+        Assert.Contains(plan, line => line.Contains("ux_alberto_dead_letter_processor_event", StringComparison.Ordinal));
+        Assert.DoesNotContain(plan, line => line.Contains("idx_alberto_dead_letter_processor ", StringComparison.Ordinal));
+    }
+
+    private async Task<List<string>> ExplainAsync(string query, CancellationToken cancellationToken)
+    {
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(cancellationToken);
+        await using var tx = await conn.BeginTransactionAsync(cancellationToken);
+        await using (var off = new NpgsqlCommand("SET LOCAL enable_seqscan = off", conn, tx))
+            await off.ExecuteNonQueryAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand($"EXPLAIN {query}", conn, tx);
+        var plan = new List<string>();
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            plan.Add(reader.GetString(0));
+        return plan;
+    }
+
+    private async Task SetRetryCountAsync(Guid entryId, int retryCount, CancellationToken cancellationToken)
+    {
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand(
+            "UPDATE alberto_outbox_entries SET retry_count = @retryCount WHERE id = @id", conn);
+        cmd.Parameters.AddWithValue("retryCount", retryCount);
+        cmd.Parameters.AddWithValue("id", entryId);
+        Assert.Equal(1, await cmd.ExecuteNonQueryAsync(cancellationToken));
+    }
+
+    private async Task<(string Status, int RetryCount, string? LastError)> ReadAttemptAsync(
+        Guid entryId, CancellationToken cancellationToken)
+    {
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT status, retry_count, last_error FROM alberto_outbox_entries WHERE id = @id", conn);
+        cmd.Parameters.AddWithValue("id", entryId);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        Assert.True(await reader.ReadAsync(cancellationToken));
+        return (reader.GetString(0), reader.GetInt32(1), reader.IsDBNull(2) ? null : reader.GetString(2));
+    }
+
     private async Task ExpireClaimAsync(Guid entryId, CancellationToken cancellationToken)
     {
         await using var conn = await fixture.DataSource.OpenConnectionAsync(cancellationToken);

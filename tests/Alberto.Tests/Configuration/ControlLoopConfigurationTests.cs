@@ -5,7 +5,6 @@ using Alberto.InMemory;
 using Alberto.Postgres;
 using Alberto.Projections;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -38,9 +37,10 @@ public class ControlLoopConfigurationTests
 
         var loop = Resolve(services, "orders").ControlLoop;
 
-        loop.PollingInterval.Should().Be(TimeSpan.FromMilliseconds(10));
-        loop.BatchSize.Should().Be(500);
-        loop.HeadWindowSize.Should().Be(2000, "untouched properties keep their default");
+        Assert.Equal(TimeSpan.FromMilliseconds(10), loop.PollingInterval);
+        Assert.Equal(500, loop.BatchSize);
+        // untouched properties keep their default
+        Assert.Equal(2000, loop.HeadWindowSize);
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public class ControlLoopConfigurationTests
         var services = new ServiceCollection();
         services.AddAlberto("orders", module => module.WithInMemory());
 
-        Resolve(services, "orders").ControlLoop.Should().Be(ControlLoopOptions.Default);
+        Assert.Equal(ControlLoopOptions.Default, Resolve(services, "orders").ControlLoop);
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public class ControlLoopConfigurationTests
             .WithInMemory()
             .WithControlLoop(o => o with { Retry = o.Retry with { MaxRetries = 5 } }));
 
-        Resolve(services, "orders").ControlLoop.Retry.MaxRetries.Should().Be(5);
+        Assert.Equal(5, Resolve(services, "orders").ControlLoop.Retry.MaxRetries);
     }
 
     [Fact]
@@ -82,8 +82,8 @@ public class ControlLoopConfigurationTests
 
         var loop = Resolve(services, "orders").ControlLoop;
 
-        loop.BatchSize.Should().Be(7);
-        loop.Retry.MaxRetries.Should().Be(11);
+        Assert.Equal(7, loop.BatchSize);
+        Assert.Equal(11, loop.Retry.MaxRetries);
     }
 
     [Fact]
@@ -98,8 +98,8 @@ public class ControlLoopConfigurationTests
 
         var leases = Resolve(services, "orders").ControlLoop.Leases;
 
-        leases.Enabled.Should().BeTrue();
-        leases.ReplicaId.Should().Be("pod-1");
+        Assert.True(leases.Enabled);
+        Assert.Equal("pod-1", leases.ReplicaId);
     }
 
     [Fact]
@@ -107,7 +107,7 @@ public class ControlLoopConfigurationTests
     {
         var options = new ProcessorLeaseOptions { ReplicaId = null };
 
-        options.EffectiveReplicaId.Should().Be(Environment.MachineName);
+        Assert.Equal(Environment.MachineName, options.EffectiveReplicaId);
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public class ControlLoopConfigurationTests
     {
         var options = new ProcessorLeaseOptions { ReplicaId = "" };
 
-        options.EffectiveReplicaId.Should().Be(Environment.MachineName);
+        Assert.Equal(Environment.MachineName, options.EffectiveReplicaId);
     }
 
     [Fact]
@@ -123,7 +123,7 @@ public class ControlLoopConfigurationTests
     {
         var options = new ProcessorLeaseOptions { ReplicaId = "   " };
 
-        options.EffectiveReplicaId.Should().Be(Environment.MachineName);
+        Assert.Equal(Environment.MachineName, options.EffectiveReplicaId);
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public class ControlLoopConfigurationTests
     {
         var options = new ProcessorLeaseOptions { ReplicaId = "pod-1" };
 
-        options.EffectiveReplicaId.Should().Be("pod-1");
+        Assert.Equal("pod-1", options.EffectiveReplicaId);
     }
 
     [Fact]
@@ -141,7 +141,7 @@ public class ControlLoopConfigurationTests
         // spaces is non-whitespace and is returned exactly as supplied.
         var options = new ProcessorLeaseOptions { ReplicaId = " pod-1 " };
 
-        options.EffectiveReplicaId.Should().Be(" pod-1 ");
+        Assert.Equal(" pod-1 ", options.EffectiveReplicaId);
     }
 
     /// <summary>
@@ -170,8 +170,8 @@ public class ControlLoopConfigurationTests
             .GetField("_defaultTimeout", BindingFlags.NonPublic | BindingFlags.Instance)!
             .GetValue(catchUp)!;
 
-        defaultTimeout.Should().Be(pollingInterval * 3,
-            "the default timeout is 3× the polling interval when that exceeds the 5-second floor");
+        // the default timeout is 3× the polling interval when that exceeds the 5-second floor
+        Assert.Equal(pollingInterval * 3, defaultTimeout);
     }
 
     [Fact]
@@ -191,8 +191,8 @@ public class ControlLoopConfigurationTests
             .GetField("_defaultTimeout", BindingFlags.NonPublic | BindingFlags.Instance)!
             .GetValue(catchUp)!;
 
-        defaultTimeout.Should().Be(TimeSpan.FromSeconds(5),
-            "the 5-second floor applies when 3× the polling interval is shorter");
+        // the 5-second floor applies when 3× the polling interval is shorter
+        Assert.Equal(TimeSpan.FromSeconds(5), defaultTimeout);
     }
 
 }

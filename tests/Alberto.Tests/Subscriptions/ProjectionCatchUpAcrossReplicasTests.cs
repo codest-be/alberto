@@ -2,7 +2,6 @@ using System.Text.Json;
 using Alberto.InMemory;
 using Alberto.Postgres;
 using Alberto.Projections;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
@@ -33,7 +32,7 @@ public sealed class ProjectionCatchUpAcrossReplicasTests(SingleTenantPostgresFix
         await using var owner = await StartReplicaAsync("replica-owner", cancellationToken);
         await using var other = await StartReplicaAsync("replica-other", cancellationToken);
 
-        (await LeaseHolderAsync(cancellationToken)).Should().Be("replica-owner");
+        Assert.Equal("replica-owner", await LeaseHolderAsync(cancellationToken));
 
         await AppendSeatAsync(other, cancellationToken);
 
@@ -44,10 +43,10 @@ public sealed class ProjectionCatchUpAcrossReplicasTests(SingleTenantPostgresFix
         // Ten seconds, not one: a loaded runner can take a second to get the head refresh and the batch
         // through, and ten still tells the owner's write apart from the 30 s timer.
         await catchUp.WaitForProjectionAsync(ProcessorId, TimeSpan.FromSeconds(10), cancellationToken);
-        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10));
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(10));
 
-        (await LeaseHolderAsync(cancellationToken)).Should().Be("replica-owner",
-            because: "the wait returned on a replica that never ran the projection");
+        // the wait returned on a replica that never ran the projection
+        Assert.Equal("replica-owner", await LeaseHolderAsync(cancellationToken));
     }
 
     [Fact]
@@ -55,7 +54,7 @@ public sealed class ProjectionCatchUpAcrossReplicasTests(SingleTenantPostgresFix
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var owner = await StartReplicaAsync("replica-fenced", cancellationToken);
-        (await LeaseHolderAsync(cancellationToken)).Should().Be("replica-fenced");
+        Assert.Equal("replica-fenced", await LeaseHolderAsync(cancellationToken));
 
         // Control: while the lease is held, the batch's checkpoint reaches the database.
         // The owner's own wait is answered by its cache, which moves before the write lands, so
@@ -64,7 +63,7 @@ public sealed class ProjectionCatchUpAcrossReplicasTests(SingleTenantPostgresFix
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
         while ((await StoredCheckpointAsync(cancellationToken) ?? 0) < first && DateTime.UtcNow < deadline)
             await Task.Delay(20, cancellationToken);
-        (await StoredCheckpointAsync(cancellationToken)).Should().BeGreaterThanOrEqualTo(first);
+        Assert.True((await StoredCheckpointAsync(cancellationToken)) >= first);
 
         // Another replica takes the lease over, in a later generation. The owner has not
         // noticed yet: its next renewal is seconds away, and it keeps processing until then.
@@ -74,14 +73,13 @@ public sealed class ProjectionCatchUpAcrossReplicasTests(SingleTenantPostgresFix
         {
             steal.Parameters.AddWithValue("consumer", ModuleKey);
             steal.Parameters.AddWithValue("processor", ProcessorId);
-            (await steal.ExecuteNonQueryAsync(cancellationToken)).Should().Be(1);
+            Assert.Equal(1, await steal.ExecuteNonQueryAsync(cancellationToken));
         }
 
         var second = await AppendSeatAsync(owner, cancellationToken);
         await Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
 
-        (await StoredCheckpointAsync(cancellationToken)).Should().BeLessThan(second,
-            because: "the fenced write of a replica without the lease is rejected");
+        Assert.True((await StoredCheckpointAsync(cancellationToken)) < second, "the fenced write of a replica without the lease is rejected");
     }
 
     private static async Task<long> AppendSeatAsync(Replica replica, CancellationToken cancellationToken)

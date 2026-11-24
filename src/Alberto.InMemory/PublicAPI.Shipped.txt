@@ -1,6 +1,9 @@
 #nullable enable
 Alberto.InMemory.InMemoryBackendDescriptor
+Alberto.InMemory.InMemoryBackendDescriptor.<Clone>$() -> Alberto.InMemory.InMemoryBackendDescriptor!
 Alberto.InMemory.InMemoryBackendDescriptor.ApplyConfiguration(Microsoft.Extensions.Configuration.IConfiguration! moduleSection) -> Alberto.Configuration.IAlbertoBackendDescriptor!
+Alberto.InMemory.InMemoryBackendDescriptor.Equals(Alberto.InMemory.InMemoryBackendDescriptor? other) -> bool
+Alberto.InMemory.InMemoryBackendDescriptor.InMemoryBackendDescriptor() -> void
 Alberto.InMemory.InMemoryBackendDescriptor.Name.get -> string!
 Alberto.InMemory.InMemoryBackendDescriptor.Register(Alberto.Configuration.AlbertoModuleContext! context) -> void
 Alberto.InMemory.InMemoryBackendDescriptor.SharedModuleKey.get -> string?
@@ -13,5 +16,10 @@ Alberto.InMemory.InMemoryStateStore<TState>.ApplyChangesAsync(System.Collections
 Alberto.InMemory.InMemoryStateStore<TState>.InMemoryStateStore(Alberto.Projections.ProjectionVersion rebuildVersion = default(Alberto.Projections.ProjectionVersion)) -> void
 Alberto.InMemory.InMemoryStateStore<TState>.ListRecentAsync(int limit = 20, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TState>!>!
 Alberto.InMemory.InMemoryStateStore<TState>.LoadManyAsync(System.Collections.Generic.IEnumerable<string!>! documentIds, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, TState>!>!
+override Alberto.InMemory.InMemoryBackendDescriptor.Equals(object? obj) -> bool
+override Alberto.InMemory.InMemoryBackendDescriptor.GetHashCode() -> int
+override Alberto.InMemory.InMemoryBackendDescriptor.ToString() -> string!
+static Alberto.InMemory.InMemoryBackendDescriptor.operator !=(Alberto.InMemory.InMemoryBackendDescriptor? left, Alberto.InMemory.InMemoryBackendDescriptor? right) -> bool
+static Alberto.InMemory.InMemoryBackendDescriptor.operator ==(Alberto.InMemory.InMemoryBackendDescriptor? left, Alberto.InMemory.InMemoryBackendDescriptor? right) -> bool
 static Alberto.InMemory.InMemoryBuilderExtensions.WithInMemory(this Alberto.AlbertoModuleBuilder! builder) -> Alberto.AlbertoModuleBuilder!
 static Alberto.InMemory.InMemoryBuilderExtensions.WithInMemory(this Alberto.AlbertoModuleBuilder! builder, string! sharedModuleKey) -> Alberto.AlbertoModuleBuilder!

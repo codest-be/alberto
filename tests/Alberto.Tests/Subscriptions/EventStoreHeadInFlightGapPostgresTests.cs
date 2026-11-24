@@ -51,6 +51,47 @@ public sealed class EventStoreHeadInFlightGapPostgresTests(SingleTenantPostgresF
         Assert.True(head.Current >= p + 2, $"head {head.Current} did not reach {p + 2} once the append committed");
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Head_stays_below_an_open_append_whose_xid_is_newer_than_every_completed_one(bool readsSnapshots)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var backend = new PostgresEventStoreBackend(fixture.DataSource);
+        var head = new EventStoreHead(readsSnapshots ? backend : new WindowOnly(backend), TimeSpan.FromMinutes(1));
+        await head.RefreshAsync(ct);
+
+        await using var committed = await Gap.Begin(fixture.ConnectionString, ct);
+        await using var open = await Gap.Begin(fixture.ConnectionString, ct);
+        await Gap.Xid(committed, ct);
+        await Gap.Xid(open, ct);
+        var p = (long)(await Gap.Scalar(open, "SELECT nextval('alberto_events_global_position_seq')", ct))!;
+        await Gap.Scalar(committed, "INSERT INTO alberto_events (event_type) VALUES ('gap-probe') RETURNING global_position", ct);
+        await Gap.Scalar(committed, "INSERT INTO alberto_events (event_type) VALUES ('gap-probe') RETURNING global_position", ct);
+        await committed.Tx.CommitAsync(ct);
+
+        await head.RefreshAsync(ct);
+        await head.RefreshAsync(ct);
+        Assert.True(head.Current < p, $"head {head.Current} passed the open append at {p}");
+
+        await Gap.Scalar(open, $"INSERT INTO alberto_events (global_position, event_type) VALUES ({p}, 'gap-probe') RETURNING global_position", ct);
+        await open.Tx.CommitAsync(ct);
+        await head.RefreshAsync(ct);
+        Assert.True(head.Current >= p + 2, $"head {head.Current} did not reach {p + 2} once the append committed");
+    }
+
+    private sealed class WindowOnly(IEventStoreHeadBackend inner) : IEventStoreHeadBackend
+    {
+        public Task<IReadOnlyList<long>> GetPositionsAsync(long afterPosition, int windowSize, CancellationToken cancellationToken = default) =>
+            inner.GetPositionsAsync(afterPosition, windowSize, cancellationToken);
+
+        public Task<HeadWindow> GetPositionWindowAsync(long afterPosition, int windowSize, CancellationToken cancellationToken = default) =>
+            inner.GetPositionWindowAsync(afterPosition, windowSize, cancellationToken);
+
+        public Task<long> GetStableHeadUpToAsync(long afterPosition, long upToPosition, CancellationToken cancellationToken = default) =>
+            inner.GetStableHeadUpToAsync(afterPosition, upToPosition, cancellationToken);
+    }
+
     [Fact]
     public async Task Head_passes_the_gap_a_rolled_back_append_leaves_without_waiting_the_refresh_interval()
     {
@@ -99,7 +140,8 @@ public sealed class EventStoreHeadInFlightGapPostgresTests(SingleTenantPostgresF
 
 /// <summary>
 /// The same, with the real multi-tenant append: tenant A's append is held open after drawing its
-/// position (a lock on its tenant row, which the append's trigger updates), while tenant B's
+/// position (a lock on its tenant row, which the append's trigger updates once the row's
+/// last_seen_at is stale), while tenant B's
 /// appends commit above it.
 /// </summary>
 [Trait("Category", "Integration")]
@@ -117,6 +159,9 @@ public sealed class EventStoreHeadInFlightGapMultiTenantTests(MultiTenantDbFixtu
         await store.AppendForTenant("gap-b", [Gap.Event(0)], cancellationToken: ct);
         await head.RefreshAsync(ct);
 
+        // The trigger touches a known tenant's row only once last_seen_at is a minute old, so age
+        // it first: otherwise the append never waits on the lock below.
+        await Gap.Query(fixture.DataSource, "UPDATE alberto_tenants SET last_seen_at = now() - INTERVAL '1 hour' WHERE tenant_id = 'gap-a'", ct);
         await using var rowLock = await Gap.Begin(fixture.ConnectionString, ct);
         await Gap.Scalar(rowLock, "SELECT 1 FROM alberto_tenants WHERE tenant_id = 'gap-a' FOR UPDATE", ct);
         var parked = store.AppendForTenant("gap-a", [Gap.Event(1)], cancellationToken: ct);

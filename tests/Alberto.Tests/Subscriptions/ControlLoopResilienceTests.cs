@@ -1,7 +1,6 @@
 using Alberto.InMemory;
 using Alberto.Checkpoints;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Subscriptions;
@@ -71,6 +70,12 @@ public sealed class ControlLoopResilienceTests
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
+        public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+            IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery, long? expectedPosition,
+            Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
         public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
     }
@@ -129,12 +134,12 @@ public sealed class ControlLoopResilienceTests
         var processor = new CountingProcessor("transient-read");
         using var cts = new CancellationTokenSource();
 
-        var loop = await StartAsync(processor, backend, new InMemoryCheckpointStore(), cts, maxConcurrency);
+        var loop = await StartAsync(processor, backend, new InMemoryFencedCheckpointStore(), cts, maxConcurrency);
         await WaitForAsync(() => processor.Processed == 2, TestContext.Current.CancellationToken);
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
 
-        loop.IsFaulted.Should().BeFalse();
+        Assert.False(loop.IsFaulted);
     }
 
     [Theory]
@@ -146,12 +151,12 @@ public sealed class ControlLoopResilienceTests
         var backend = new ScriptedBackend((_, _) => [MakeEvent(100), MakeEvent(101), MakeEvent(102)]);
         using var cts = new CancellationTokenSource();
 
-        var loop = await StartAsync(new CountingProcessor("no-spin"), backend, new InMemoryCheckpointStore(), cts, maxConcurrency);
+        var loop = await StartAsync(new CountingProcessor("no-spin"), backend, new InMemoryFencedCheckpointStore(), cts, maxConcurrency);
         await Task.Delay(300, TestContext.Current.CancellationToken);
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
 
         // 10ms polling interval: a delayed loop reads ~30 times in 300ms, a spinning one thousands.
-        backend.Calls.Should().BeLessThan(100);
+        Assert.True(backend.Calls < 100);
     }
 }

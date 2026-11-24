@@ -18,7 +18,7 @@ internal sealed class InterceptingEventStoreBackend(
     IEventStoreBackend inner,
     IAppendInterceptorPipeline pipeline,
     string? dbSystem = null)
-    : IEventStoreBackend, IEventStoreHeadBackend
+    : IEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
 {
     private readonly IEventStoreBackend _inner = inner ?? throw new ArgumentNullException(nameof(inner));
     private readonly IAppendInterceptorPipeline _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
@@ -32,6 +32,23 @@ internal sealed class InterceptingEventStoreBackend(
         DcbQuery? dcbQuery = null,
         long? expectedPosition = null,
         CancellationToken cancellationToken = default)
+        => AppendThroughPipelineAsync(events, dcbQuery, expectedPosition, inTransaction: null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+        IEnumerable<IEventToPersist> events,
+        DcbQuery? dcbQuery,
+        long? expectedPosition,
+        Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
+        CancellationToken cancellationToken = default)
+        => AppendThroughPipelineAsync(events, dcbQuery, expectedPosition, inTransaction, cancellationToken);
+
+    private Task<IReadOnlyCollection<IEventEnvelope>> AppendThroughPipelineAsync(
+        IEnumerable<IEventToPersist> events,
+        DcbQuery? dcbQuery,
+        long? expectedPosition,
+        Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task>? inTransaction,
+        CancellationToken cancellationToken)
     {
         var context = new AppendContext
         {
@@ -42,11 +59,11 @@ internal sealed class InterceptingEventStoreBackend(
 
         return _pipeline.ExecuteAsync(
             context,
-            ctx => _inner.AppendAsync(
-                StampTraceContext(ctx.Events),
-                ctx.DcbQuery,
-                ctx.ExpectedPosition,
-                cancellationToken),
+            ctx => inTransaction is null
+                ? _inner.AppendAsync(
+                    StampTraceContext(ctx.Events), ctx.DcbQuery, ctx.ExpectedPosition, cancellationToken)
+                : _inner.AppendAsync(
+                    StampTraceContext(ctx.Events), ctx.DcbQuery, ctx.ExpectedPosition, inTransaction, cancellationToken),
             cancellationToken);
     }
 
@@ -219,4 +236,7 @@ internal sealed class InterceptingEventStoreBackend(
     public Task<long> GetStableHeadUpToAsync(
         long afterPosition, long upToPosition, CancellationToken cancellationToken = default)
         => _innerHead.GetStableHeadUpToAsync(afterPosition, upToPosition, cancellationToken);
+
+    public Task<HeadSnapshot> GetHeadSnapshotAsync(long afterPosition, int windowSize, CancellationToken cancellationToken)
+        => HeadSnapshot.ReadAsync(_innerHead, afterPosition, windowSize, cancellationToken);
 }

@@ -212,7 +212,7 @@ middleware chain, save the checkpoint, sleep. Details in
 [architecture/async-processing.md](architecture/async-processing.md).
 
 Projections and reactors can also run **inline**, synchronously inside `AppendAsync`, before it
-returns, trading read-your-writes consistency for latency and coupled failures.
+returns, trading write latency and coupled failures for read-your-writes consistency.
 
 ## Modules
 
@@ -233,7 +233,7 @@ store.
 | Interface | For | Gives you |
 |---|---|---|
 | `IEventStore` | Application code, and what a backend author implements | Appends with boundary conditions, `ReadAsync`/`ReadAllAsync` (batches), `StreamAsync`/`StreamAllAsync` (lazy), `GetLastPositionAsync` |
-| `IEventStoreBackend` | Backend authors | `IEventStore` plus `ReadAllOfTypesAsync`, the filtered feed the control loop reads |
+| `IEventStoreBackend` | Backend authors | `IEventStore` plus `ReadAllOfTypesAsync`, the filtered feed the control loop reads, and the `AppendAsync` overload that runs inline projections inside the append |
 
 Depend on `IEventStore`. Implement `IEventStoreBackend`; `EventStore` wraps it and adds argument
 validation, inline projections and post-append handlers.

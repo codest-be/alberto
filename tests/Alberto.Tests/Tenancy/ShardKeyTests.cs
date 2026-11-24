@@ -1,5 +1,4 @@
 using Alberto.Tenancy;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Tenancy;
@@ -9,7 +8,7 @@ public class ShardKeyTests
     [Fact]
     public void Compose_joins_the_module_and_the_shard()
     {
-        ShardKey.Compose("orders", "db1").Should().Be("orders#db1");
+        Assert.Equal("orders#db1", ShardKey.Compose("orders", "db1"));
     }
 
     [Theory]
@@ -20,17 +19,16 @@ public class ShardKeyTests
     {
         var compose = () => ShardKey.Compose(moduleKey!, "db1");
 
-        compose.Should().Throw<ArgumentException>();
+        Assert.ThrowsAny<ArgumentException>(compose);
     }
 
     [Fact]
     public void A_composed_key_round_trips()
     {
-        ShardKey.TryParse(ShardKey.Compose("orders", "db1"), out var moduleKey, out var shardId)
-            .Should().BeTrue();
+        Assert.True(ShardKey.TryParse(ShardKey.Compose("orders", "db1"), out var moduleKey, out var shardId));
 
-        moduleKey.Should().Be("orders");
-        shardId.Should().Be("db1");
+        Assert.Equal("orders", moduleKey);
+        Assert.Equal("db1", shardId);
     }
 
     [Theory]
@@ -42,10 +40,10 @@ public class ShardKeyTests
     [InlineData("orders#db1#x")]  // never produced by Compose
     public void TryParse_refuses_anything_Compose_did_not_produce(string? key)
     {
-        ShardKey.TryParse(key, out var moduleKey, out var shardId).Should().BeFalse();
+        Assert.False(ShardKey.TryParse(key, out var moduleKey, out var shardId));
 
-        moduleKey.Should().BeNull();
-        shardId.Should().BeNull();
+        Assert.Null(moduleKey);
+        Assert.Null(shardId);
     }
 
     [Fact]
@@ -53,15 +51,15 @@ public class ShardKeyTests
     {
         // This is what keeps every existing consumer of ModuleKey working: an unsharded module
         // key is its own logical key.
-        ShardKey.ModuleOf("orders").Should().Be("orders");
-        ShardKey.ShardOf("orders").Should().BeNull();
+        Assert.Equal("orders", ShardKey.ModuleOf("orders"));
+        Assert.Null(ShardKey.ShardOf("orders"));
     }
 
     [Fact]
     public void ModuleOf_and_ShardOf_split_a_shard_key()
     {
-        ShardKey.ModuleOf("orders#db1").Should().Be("orders");
-        ShardKey.ShardOf("orders#db1").Should().Be("db1");
+        Assert.Equal("orders", ShardKey.ModuleOf("orders#db1"));
+        Assert.Equal("db1", ShardKey.ShardOf("orders#db1"));
     }
 
     [Theory]
@@ -70,7 +68,7 @@ public class ShardKeyTests
     [InlineData("a")]
     public void Valid_shard_ids_are_accepted(string shardId)
     {
-        ShardKey.IsValidShardId(shardId).Should().BeTrue();
+        Assert.True(ShardKey.IsValidShardId(shardId));
     }
 
     [Theory]
@@ -84,13 +82,13 @@ public class ShardKeyTests
     [InlineData("orders#db1")] // the separator itself
     public void Unsafe_shard_ids_are_rejected(string? shardId)
     {
-        ShardKey.IsValidShardId(shardId).Should().BeFalse();
+        Assert.False(ShardKey.IsValidShardId(shardId));
     }
 
     [Fact]
     public void A_shard_id_is_capped_at_63_characters()
     {
-        ShardKey.IsValidShardId('a' + new string('b', 62)).Should().BeTrue();
-        ShardKey.IsValidShardId('a' + new string('b', 63)).Should().BeFalse();
+        Assert.True(ShardKey.IsValidShardId('a' + new string('b', 62)));
+        Assert.False(ShardKey.IsValidShardId('a' + new string('b', 63)));
     }
 }

@@ -1,5 +1,4 @@
 using Alberto.Postgres;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Postgres;
@@ -18,11 +17,10 @@ public sealed class PostgresMigratorTests(SingleTenantPostgresFixture fixture)
             schema,
             singleTenant: true);
 
-        result.Successful.Should().BeTrue(because: result.Error?.Message);
-        PostgresMigrator.GetPendingMigrations(
+        Assert.True(result.Successful, result.Error?.Message);
+        Assert.Empty(PostgresMigrator.GetPendingMigrations(
                 fixture.ConnectionString,
                 schema,
-                singleTenant: true)
-            .Should().BeEmpty();
+                singleTenant: true));
     }
 }
