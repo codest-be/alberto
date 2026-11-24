@@ -10,6 +10,8 @@ namespace Alberto.Projections;
 /// store filters before invoking <see cref="ProcessAsync"/>. Failures propagate to the caller and
 /// fail the mutation — but the events themselves are already committed by the time inline
 /// projections run, so a projection failure is observable as a 500 with the event persisted.
+/// It also runs outside the append lock, so concurrent appends reach it in no particular order.
+/// Implement <see cref="ITransactionalInlineProjection"/> for writes that must follow log order.
 /// </remarks>
 public interface IInlineProjection
 {

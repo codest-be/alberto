@@ -1390,7 +1390,10 @@ Two replacements, depending on what the inline write is for:
   enlists in the appending `DbContext` transaction.
 - **Anything else:** implement `IInlineProjection` directly and register it with
   `configurator.RegisterInlineProjection(projection)`. The interface is two members
-  (`HandledEventTypes` and `ProcessAsync`) and remains public for exactly this.
+  (`HandledEventTypes` and `ProcessAsync`) and remains public for exactly this. It runs after the
+  append commits, in no order across concurrent appends; implement `ITransactionalInlineProjection`
+  to write inside the append transaction, in log order. See
+  [Inline vs async](projections.md#inline-vs-async).
 
 ---
 

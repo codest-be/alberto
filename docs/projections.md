@@ -307,6 +307,13 @@ events in log order and a projection that throws rolls the append back. This has
 Backends that cannot share a transaction (the in-memory backend) run the projection after the append,
 as before. Post-append handlers and reactors always run after commit.
 
+A projection you write yourself and register with `RegisterInlineProjection` gets the same
+guarantee only if it implements `ITransactionalInlineProjection`. A plain `IInlineProjection` runs
+after the append commits, outside the lock: two concurrent appends that touch the same row can
+reach it in either order, and a projection that skips events at or below the row's stored position
+then loses the earlier one. Use it for writes where order does not matter; anything keyed by a
+position needs `ITransactionalInlineProjection`.
+
 Use `Inline` only for narrow per-user projections the caller will immediately re-query. Everything
 else should be `Async`; "the UI flickers" is better solved by returning the decision's own result
 than by putting a projection on the write path.
