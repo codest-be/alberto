@@ -42,3 +42,26 @@ public sealed class PostgresEventStoreBackendTests(SingleTenantPostgresFixture f
             new PostgresEventStoreBackend(fixture.DataSource, TimeProvider));
     }
 }
+
+/// <summary>
+/// The request-scoped tenant decorator over the multi-tenant PostgreSQL backend, run through the
+/// same specification. Each test instance appends as a tenant of its own.
+/// </summary>
+[Trait("Category", "Integration")]
+public sealed class PostgresTenantEventStoreDecoratorSpecificationTests(MultiTenantDbFixture fixture)
+    : EventStoreBackendSpecification, IClassFixture<MultiTenantDbFixture>
+{
+    protected override bool SupportsStreamAll => false;
+
+    protected override Task<IEventStoreBackend> CreateBackend() =>
+        Task.FromResult<IEventStoreBackend>(new TenantEventStoreDecorator(
+            new PostgresTenantEventStoreBackend(fixture.DataSource, TimeProvider),
+            new SpecTenant($"spec-{TestId}")));
+
+    private sealed class SpecTenant(string tenantId) : Alberto.Tenancy.ITenantAccessor
+    {
+        public string TenantId => tenantId;
+        public string? TenantIdOrDefault => tenantId;
+        public bool HasTenant => true;
+    }
+}

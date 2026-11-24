@@ -1,1 +1,5 @@
 #nullable enable
+Alberto.Testing.Xunit.EventStoreBackendSpecification.InTransactionAppend_HandsTheCallbackTheAppendedEvents_AndCommitsThem() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.EventStoreBackendSpecification.InTransactionAppend_DuringTheCallback_ReadsDoNotSeeTheEvents() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.EventStoreBackendSpecification.InTransactionAppend_ACallbackThatThrows_PersistsNothing_AndFreesTheNextAppend() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.EventStoreBackendSpecification.InTransactionAppend_ADcbConflict_FailsBeforeTheCallbackRuns() -> System.Threading.Tasks.Task!
