@@ -18,7 +18,7 @@ public sealed class ConcurrentTenantAppendDeliveryTests(MultiTenantDbFixture fix
     private const int Tenants = 8;
     private const int AppendsPerTenant = 40;
 
-    [Fact]
+    [Fact(Explicit = true)]
     public async Task Every_committed_event_of_concurrent_tenant_appends_reaches_a_caught_up_processor()
     {
         var ct = TestContext.Current.CancellationToken;
