@@ -1,17 +1,25 @@
 namespace Alberto.Projections;
 
 /// <summary>
-/// Inline projection that runs immediately after event append, before <see cref="IEventStore.AppendAsync"/>
-/// returns to the caller. Used to provide read-your-writes consistency for projections that the
-/// caller will query immediately after the mutation.
+/// Projection that runs inside <see cref="IEventStore.AppendAsync"/>: after the events are inserted,
+/// under the backend's append lock, before they become visible. The events and the projection commit
+/// together, in log order, and the caller reads its own writes as soon as the append returns.
 /// </summary>
 /// <remarks>
 /// Implementations process only events whose type is in <see cref="HandledEventTypes"/>; the event
-/// store filters before invoking <see cref="ProcessAsync"/>. Failures propagate to the caller and
-/// fail the mutation — but the events themselves are already committed by the time inline
-/// projections run, so a projection failure is observable as a 500 with the event persisted.
-/// It also runs outside the append lock, so concurrent appends reach it in no particular order.
-/// Implement <see cref="ITransactionalInlineProjection"/> for writes that must follow log order.
+/// store filters before invoking <see cref="ProcessAsync"/>. A failure aborts the append: the caller
+/// sees the exception and the events were not written.
+/// <para>
+/// The Postgres backends give the projection the append's own database transaction, so its writes
+/// roll back with the events. The in-memory backend has no database transaction and hands over
+/// <see cref="AppendTransaction.None"/>: the projection runs under the backend's append lock,
+/// before the events become visible, and a failure discards them.
+/// A projection that appends to the same in-memory backend from inside this method waits on that lock forever.
+/// </para>
+/// <para>
+/// Work that must happen only after the events are committed, such as publishing a message or calling
+/// another system, belongs in an <see cref="Subscriptions.IPostAppendHandler"/>.
+/// </para>
 /// </remarks>
 public interface IInlineProjection
 {
@@ -21,11 +29,13 @@ public interface IInlineProjection
     IReadOnlySet<string> HandledEventTypes { get; }
 
     /// <summary>
-    /// Processes events after they have been appended.
+    /// Processes events inside the append's transaction.
     /// </summary>
-    /// <param name="events">The events to process.</param>
+    /// <param name="events">The events to process, in log order.</param>
+    /// <param name="transaction">The append's connection and uncommitted transaction.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task ProcessAsync(
         IReadOnlyList<IEventEnvelope> events,
+        AppendTransaction transaction,
         CancellationToken cancellationToken = default);
 }

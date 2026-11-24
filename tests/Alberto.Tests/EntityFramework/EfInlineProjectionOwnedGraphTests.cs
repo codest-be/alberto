@@ -101,8 +101,8 @@ public sealed class EfInlineProjectionOwnedGraphTests(EfEventStoreFixture fixtur
             BuildDeclaration("owned-after-commit"), fixture.CreateFactory());
         var shelfId = Guid.NewGuid().ToString();
 
-        await projection.ProcessAsync([Envelope(new ShelfStocked(shelfId, "shelf", "Ghent", ["a", "b"]), 1)], cancellationToken);
-        await projection.ProcessAsync([Envelope(new ShelfMoved(shelfId, "Bruges", ["c"]), 2)], cancellationToken);
+        await projection.ProcessAsync([Envelope(new ShelfStocked(shelfId, "shelf", "Ghent", ["a", "b"]), 1)], AppendTransaction.None, cancellationToken);
+        await projection.ProcessAsync([Envelope(new ShelfMoved(shelfId, "Bruges", ["c"]), 2)], AppendTransaction.None, cancellationToken);
 
         (await ReadShelfAsync(shelfId))!.Items.Select(i => i.Sku).Should().Equal("c");
         (await CountItemRowsAsync(shelfId)).Should().Be(1);

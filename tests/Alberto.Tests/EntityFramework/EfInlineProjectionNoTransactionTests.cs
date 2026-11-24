@@ -14,18 +14,18 @@ public sealed class EfInlineProjectionNoTransactionTests(EfProjectionTestFixture
     : IClassFixture<EfProjectionTestFixture>
 {
     [Fact]
-    public async Task ProcessInTransactionAsync_WithNoTransaction_WritesThroughAContextOfItsOwn()
+    public async Task ProcessAsync_WithNoTransaction_WritesThroughAContextOfItsOwn()
     {
         var entityId = Guid.NewGuid().ToString();
         var projection = new DeclaredEfInlineProjection<CounterEntity, EfTestDbContext>(
             EfProjectionTestFixture.BuildDeclaration("no-transaction"),
             fixture.CreateFactory());
 
-        await projection.ProcessInTransactionAsync(
+        await projection.ProcessAsync(
             [EfTestEnvelopes.ForCounterIncremented(entityId, amount: 3, position: 1)],
             AppendTransaction.None,
             TestContext.Current.CancellationToken);
-        await projection.ProcessInTransactionAsync(
+        await projection.ProcessAsync(
             [EfTestEnvelopes.ForCounterIncremented(entityId, amount: 4, position: 2)],
             AppendTransaction.None,
             TestContext.Current.CancellationToken);

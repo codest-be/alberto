@@ -93,7 +93,8 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
         public IReadOnlySet<string> HandledEventTypes { get; }
 
-        public Task ProcessAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
+        public Task ProcessAsync(
+            IReadOnlyList<IEventEnvelope> events, AppendTransaction transaction, CancellationToken cancellationToken = default)
             => _inner.ProcessBatchAsync(events, cancellationToken);
     }
 

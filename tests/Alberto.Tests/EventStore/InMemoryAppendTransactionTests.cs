@@ -216,7 +216,7 @@ public sealed class InMemoryAppendTransactionTests
         public bool HasTenant => true;
     }
 
-    private sealed class RecordingProjection : ITransactionalInlineProjection
+    private sealed class RecordingProjection : IInlineProjection
     {
         private int _calls;
 
@@ -230,10 +230,7 @@ public sealed class InMemoryAppendTransactionTests
 
         public Func<Task>? OnFirstCall { get; set; }
 
-        public Task ProcessAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
-            => Record(events);
-
-        public Task ProcessInTransactionAsync(
+        public Task ProcessAsync(
             IReadOnlyList<IEventEnvelope> events, AppendTransaction transaction, CancellationToken cancellationToken = default)
             => Record(events);
 

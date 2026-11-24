@@ -4,7 +4,7 @@ namespace Alberto;
 
 /// <summary>
 /// The database connection and transaction an append runs in, handed to an
-/// <see cref="Projections.ITransactionalInlineProjection"/> so its writes commit or roll back with the events.
+/// <see cref="Projections.IInlineProjection"/> so its writes commit or roll back with the events.
 /// </summary>
 /// <remarks>
 /// Both belong to the append: the projection must not commit, roll back, close or dispose either.

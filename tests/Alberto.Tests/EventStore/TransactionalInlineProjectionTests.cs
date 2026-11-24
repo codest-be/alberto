@@ -7,10 +7,10 @@ namespace Alberto.Tests;
 public sealed class TransactionalInlineProjectionTests
 {
     [Fact]
-    public async Task AppendAsync_OnATransactionalBackend_RunsTheProjectionInsideTheAppendAndNotAgain()
+    public async Task AppendAsync_RunsTheProjectionInsideTheAppendOnce()
     {
-        var projection = new TransactionalProjection("handled");
-        var backend = new TransactionalBackend(projection.Calls);
+        var projection = new InTransactionProjection("handled");
+        var backend = new InTransactionBackend(projection.Calls);
         var store = new EventStore(backend, [projection]);
 
         await store.AppendAsync([Event("handled")], cancellationToken: TestContext.Current.CancellationToken);
@@ -19,10 +19,10 @@ public sealed class TransactionalInlineProjectionTests
     }
 
     [Fact]
-    public async Task AppendAsync_OnATransactionalBackend_KeepsTheTransactionOutOfAppendsTheProjectionIgnores()
+    public async Task AppendAsync_KeepsTheTransactionOutOfAppendsTheProjectionIgnores()
     {
-        var projection = new TransactionalProjection("handled");
-        var backend = new TransactionalBackend(projection.Calls);
+        var projection = new InTransactionProjection("handled");
+        var backend = new InTransactionBackend(projection.Calls);
         var store = new EventStore(backend, [projection]);
 
         await store.AppendAsync([Event("unrelated")], cancellationToken: TestContext.Current.CancellationToken);
@@ -33,8 +33,8 @@ public sealed class TransactionalInlineProjectionTests
     [Fact]
     public async Task AppendAsync_AProjectionThatThrowsInTheTransaction_FailsTheAppendWithoutCommitting()
     {
-        var projection = new TransactionalProjection("handled") { Fail = true };
-        var backend = new TransactionalBackend(projection.Calls);
+        var projection = new InTransactionProjection("handled") { Fail = true };
+        var backend = new InTransactionBackend(projection.Calls);
         var store = new EventStore(backend, [projection]);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -50,7 +50,7 @@ public sealed class TransactionalInlineProjectionTests
         EventData = "{}",
     };
 
-    private sealed class TransactionalProjection(string handled) : ITransactionalInlineProjection
+    private sealed class InTransactionProjection(string handled) : IInlineProjection
     {
         public IReadOnlySet<string> HandledEventTypes { get; } = new HashSet<string> { handled };
 
@@ -58,13 +58,7 @@ public sealed class TransactionalInlineProjectionTests
 
         public bool Fail { get; init; }
 
-        public Task ProcessAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
-        {
-            Calls.Add("after-commit");
-            return Task.CompletedTask;
-        }
-
-        public Task ProcessInTransactionAsync(
+        public Task ProcessAsync(
             IReadOnlyList<IEventEnvelope> events, AppendTransaction transaction, CancellationToken cancellationToken = default)
         {
             Calls.Add("in-transaction");
@@ -72,7 +66,7 @@ public sealed class TransactionalInlineProjectionTests
         }
     }
 
-    private sealed class TransactionalBackend(List<string> calls) : IEventStoreBackend
+    private sealed class InTransactionBackend(List<string> calls) : IEventStoreBackend
     {
         private readonly InMemoryEventStoreBackend _inner = new();
 
