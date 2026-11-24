@@ -754,6 +754,116 @@ public abstract class EventStoreBackendSpecification
 
     #endregion
 
+    #region In-Transaction Append Tests
+
+    /// <summary>
+    /// The in-transaction overload of <see cref="IEventStoreBackend.AppendAsync"/> must hand its
+    /// callback exactly the envelopes the append returns, and commit them once the callback succeeds.
+    /// </summary>
+    [Fact]
+    public async Task InTransactionAppend_HandsTheCallbackTheAppendedEvents_AndCommitsThem()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var backend = await CreateBackend();
+        IReadOnlyList<IEventEnvelope>? handed = null;
+
+        var appended = await backend.AppendAsync(
+            [CreateEvent("order-placed", $"order:{TestId}"), CreateEvent("order-confirmed", $"order:{TestId}")],
+            dcbQuery: null,
+            expectedPosition: null,
+            (events, _, _) =>
+            {
+                handed = events;
+                return Task.CompletedTask;
+            },
+            cancellationToken);
+
+        Assert.NotNull(handed);
+        Assert.Equal(appended.Select(e => (e.Id, e.GlobalPosition)), handed.Select(e => (e.Id, e.GlobalPosition)));
+        var read = await backend.ReadAsync(DcbQuery.ByTags($"order:{TestId}"), 0, 100, cancellationToken);
+        Assert.Equal(appended.Select(e => e.Id), read.Select(e => e.Id));
+    }
+
+    /// <summary>
+    /// While the callback runs the append has not committed, so a read through the backend must
+    /// not see its events yet.
+    /// </summary>
+    [Fact]
+    public async Task InTransactionAppend_DuringTheCallback_ReadsDoNotSeeTheEvents()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var backend = await CreateBackend();
+        var query = DcbQuery.ByTags($"order:{TestId}");
+        int? seenDuringCallback = null;
+
+        await backend.AppendAsync(
+            [CreateEvent("order-placed", $"order:{TestId}")],
+            dcbQuery: null,
+            expectedPosition: null,
+            async (_, _, ct) => seenDuringCallback = (await backend.ReadAsync(query, 0, 100, ct)).Count,
+            cancellationToken);
+
+        Assert.Equal(0, seenDuringCallback);
+    }
+
+    /// <summary>
+    /// A callback that throws must abort the append: its exception propagates, none of the events
+    /// become readable, and the next append is not blocked by the aborted one.
+    /// </summary>
+    [Fact]
+    public async Task InTransactionAppend_ACallbackThatThrows_PersistsNothing_AndFreesTheNextAppend()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var backend = await CreateBackend();
+        var query = DcbQuery.ByTags($"order:{TestId}");
+        var failure = new InvalidOperationException("callback failed");
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => backend.AppendAsync(
+            [CreateEvent("order-placed", $"order:{TestId}")],
+            dcbQuery: null,
+            expectedPosition: null,
+            async (_, _, _) =>
+            {
+                await Task.Yield();
+                throw failure;
+            },
+            cancellationToken));
+
+        Assert.Same(failure, thrown);
+        Assert.Empty(await backend.ReadAsync(query, 0, 100, cancellationToken));
+        await backend.AppendAsync([CreateEvent("order-placed", $"order:{TestId}")], cancellationToken: cancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
+        Assert.Single(await backend.ReadAsync(query, 0, 100, cancellationToken));
+    }
+
+    /// <summary>
+    /// The DCB boundary check comes first: an append that conflicts must throw
+    /// <see cref="DcbConflictException"/> without running the callback.
+    /// </summary>
+    [Fact]
+    public async Task InTransactionAppend_ADcbConflict_FailsBeforeTheCallbackRuns()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var backend = await CreateBackend();
+        await backend.AppendAsync([CreateEvent("order-placed", $"order:{TestId}")], cancellationToken: cancellationToken);
+        var callbackRan = false;
+
+        await Assert.ThrowsAsync<DcbConflictException>(() => backend.AppendAsync(
+            [CreateEvent("order-confirmed", $"order:{TestId}")],
+            DcbQuery.ByTags($"order:{TestId}"),
+            expectedPosition: 0,
+            (_, _, _) =>
+            {
+                callbackRan = true;
+                return Task.CompletedTask;
+            },
+            cancellationToken));
+
+        Assert.False(callbackRan);
+    }
+
+    #endregion
+
     #region Position Tests
 
     /// <summary>

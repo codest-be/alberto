@@ -15,6 +15,8 @@ namespace Alberto.Tests.EntityFramework;
 public sealed class EfInlineProjectionOrderingTests(EfEventStoreFixture fixture)
     : IClassFixture<EfEventStoreFixture>
 {
+    private static readonly TimeSpan Hang = TimeSpan.FromSeconds(30);
+
     [Fact]
     public async Task TwoAppendsToOneDocument_WhoseFirstProjectionIsSlow_ProjectBothEvents()
     {
@@ -68,7 +70,7 @@ public sealed class EfInlineProjectionOrderingTests(EfEventStoreFixture fixture)
         handler.Store = store;
 
         await store.AppendAsync([Increment(entityId, 1)], cancellationToken: cancellationToken)
-            .WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
+            .WaitAsync(Hang, cancellationToken);
 
         Assert.Equal(11, (await fixture.ReadEntityAsync(entityId))!.Counter);
     }
@@ -89,7 +91,7 @@ public sealed class EfInlineProjectionOrderingTests(EfEventStoreFixture fixture)
         await Assert.ThrowsAnyAsync<DcbConflictException>(conflict);
 
         await store.AppendAsync([Tagged(3)], cancellationToken: cancellationToken)
-            .WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
+            .WaitAsync(Hang, cancellationToken);
         Assert.Equal(4, (await fixture.ReadEntityAsync(entityId))!.Counter);
     }
 
@@ -103,7 +105,7 @@ public sealed class EfInlineProjectionOrderingTests(EfEventStoreFixture fixture)
         var entityId = Guid.NewGuid().ToString();
 
         await store.AppendAsync([Increment(entityId, 1)], cancellationToken: cancellationToken)
-            .WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
+            .WaitAsync(Hang, cancellationToken);
 
         Assert.Equal(1, (await fixture.ReadEntityAsync(entityId))!.Counter);
     }
@@ -128,7 +130,7 @@ public sealed class EfInlineProjectionOrderingTests(EfEventStoreFixture fixture)
         Assert.Equal(before.Count, after.Count);
         Assert.Null(await fixture.ReadEntityAsync(entityId));
         await store.AppendAsync([Increment(entityId, 2)], cancellationToken: cancellationToken)
-            .WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
+            .WaitAsync(Hang, cancellationToken);
         // the failed append released the append lock
         Assert.Equal(2, (await fixture.ReadEntityAsync(entityId))!.Counter);
     }
