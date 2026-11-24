@@ -77,6 +77,10 @@ Alberto.Testing.Xunit.EventStoreBackendSpecification.GetPositionsAsync_EmptyStor
 Alberto.Testing.Xunit.EventStoreBackendSpecification.GetPositionsAsync_ExcludesPositionsBeyondWindow() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.EventStoreBackendSpecification.GetPositionsAsync_ReturnsPositionsInWindow() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.EventStoreBackendSpecification.GetStableHeadAsync_AfterCommittedAppend_ExecutesBarrier() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.EventStoreBackendSpecification.InTransactionAppend_ACallbackThatThrows_PersistsNothing_AndFreesTheNextAppend() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.EventStoreBackendSpecification.InTransactionAppend_ADcbConflict_FailsBeforeTheCallbackRuns() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.EventStoreBackendSpecification.InTransactionAppend_DuringTheCallback_ReadsDoNotSeeTheEvents() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.EventStoreBackendSpecification.InTransactionAppend_HandsTheCallbackTheAppendedEvents_AndCommitsThem() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.EventStoreBackendSpecification.LegacyEvent_WithoutVersionTag_ReadsAsVersion1() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.EventStoreBackendSpecification.StreamAllOfTypes_ReturnsEveryMatchingEvent_InPositionOrder() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.EventStoreBackendSpecification.StreamAll_ShouldReturnAllEvents() -> System.Threading.Tasks.Task!

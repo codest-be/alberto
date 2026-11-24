@@ -17,6 +17,27 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.18.0] - 2026-11-24
+
+A minor because `EventStoreBackendSpecification` gained four tests: a backend that inherits it now
+has to honour the in-append `AppendAsync` overload. Nothing else changes for consumers. No migrations.
+
+### Added
+
+- `EventStoreBackendSpecification` covers the in-append `AppendAsync(events, dcbQuery, expectedPosition, inTransaction, ct)` overload: the callback sees the envelopes the append returns, a read inside it sees none of them, a throw rolls the append back and frees the lock, and a DCB conflict throws `DcbConflictException` before the callback runs. A third-party backend that inherits the specification picks these up on upgrade (#303)
+
+### Changed
+
+- `Alberto.Testing.Xunit` is built against xunit.v3 4.0.3. Its xunit references stay private, but test projects that run the specification should be on xunit.v3 4.x
+- `Alberto.Postgres` depends on Npgsql 10.0.4
+
+### Internal
+
+- The EF inline projection ordering tests guard against a hang with a 30 s bound instead of 3 s, so cold runs under coverage no longer fail (#304)
+- The test projects use xUnit asserts; FluentAssertions is gone (#292)
+
+---
+
 ## [0.17.0] - 2026-11-24
 
 Inline projections now mean one thing on every backend: they run inside the append, in log order,
@@ -1221,7 +1242,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/codest-be/alberto/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/codest-be/alberto/compare/v0.16.1...v0.17.0
 [0.16.1]: https://github.com/codest-be/alberto/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/codest-be/alberto/compare/v0.15.2...v0.16.0
