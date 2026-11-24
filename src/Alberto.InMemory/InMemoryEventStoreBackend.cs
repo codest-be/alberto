@@ -14,14 +14,20 @@ namespace Alberto.InMemory;
 /// <para>
 /// <strong>Multi-tenant mode</strong> (via <c>.WithInMemory()</c> plus <c>.WithTenancy()</c>):
 /// <see cref="InMemoryTenantEventStoreDecorator"/> wraps this backend and calls
-/// <see cref="AppendForTenant"/> / <see cref="StreamForTenant"/> instead, stamping and
+/// <see cref="AppendForTenant(string, IEnumerable{IEventToPersist}, DcbQuery?, long?, CancellationToken)"/> / <see cref="StreamForTenant"/> instead, stamping and
 /// filtering by the tenant ID supplied from <c>ITenantAccessor</c> — the same way
 /// <c>TenantEventStoreDecorator</c> wraps the Postgres tenant backend.
 /// </para>
 /// </remarks>
-internal sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
+internal sealed class InMemoryEventStoreBackend(TimeProvider timeProvider)
+    : IEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
 {
     private readonly object _lock = new();
+
+    // Serialises appends the way the per-tenant advisory lock does on Postgres, but across an await:
+    // a transactional append holds it while its projections run, and the sync _lock cannot be held
+    // that long. Reads and the head never take it.
+    private readonly SemaphoreSlim _appendGate = new(1, 1);
 
     // Main event storage (like 'events' table)
     private readonly List<EventEnvelope> _events = [];
@@ -265,10 +271,15 @@ internal sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEv
         DcbQuery? dcbQuery = null,
         long? expectedPosition = null,
         CancellationToken cancellationToken = default)
-    {
-        lock (_lock)
-            return Task.FromResult(AppendCore(tenantId: null, events, dcbQuery, expectedPosition));
-    }
+        => AppendCoreAsync(tenantId: null, events, dcbQuery, expectedPosition, inTransaction: null, cancellationToken);
+
+    public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+        IEnumerable<IEventToPersist> events,
+        DcbQuery? dcbQuery,
+        long? expectedPosition,
+        Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
+        CancellationToken cancellationToken = default)
+        => AppendCoreAsync(tenantId: null, events, dcbQuery, expectedPosition, inTransaction, cancellationToken);
 
     /// <summary>
     /// Appends events tagged with the given tenant. Used by <see cref="InMemoryTenantEventStoreDecorator"/>
@@ -280,19 +291,65 @@ internal sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEv
         DcbQuery? dcbQuery = null,
         long? expectedPosition = null,
         CancellationToken cancellationToken = default)
+        => AppendCoreAsync(tenantId, events, dcbQuery, expectedPosition, inTransaction: null, cancellationToken);
+
+    /// <summary>
+    /// As <see cref="AppendForTenant(string, IEnumerable{IEventToPersist}, DcbQuery?, long?, CancellationToken)"/>,
+    /// running <paramref name="inTransaction"/> before the events become visible.
+    /// </summary>
+    internal Task<IReadOnlyCollection<IEventEnvelope>> AppendForTenant(
+        string tenantId,
+        IEnumerable<IEventToPersist> events,
+        DcbQuery? dcbQuery,
+        long? expectedPosition,
+        Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
+        CancellationToken cancellationToken = default)
+        => AppendCoreAsync(tenantId, events, dcbQuery, expectedPosition, inTransaction, cancellationToken);
+
+    /// <summary>
+    /// One append at a time (the gate). The batch is checked and built first, then
+    /// <paramref name="inTransaction"/> runs while the events are still invisible and no position is
+    /// taken, and only then is the batch published. A throw from the step discards the batch, so there is
+    /// nothing to roll back and the control loop never sees a position that later disappears. The log has
+    /// one position sequence for every tenant, so the gate is per backend, not per tenant.
+    /// </summary>
+    private async Task<IReadOnlyCollection<IEventEnvelope>> AppendCoreAsync(
+        string? tenantId,
+        IEnumerable<IEventToPersist> events,
+        DcbQuery? dcbQuery,
+        long? expectedPosition,
+        Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task>? inTransaction,
+        CancellationToken cancellationToken)
     {
-        lock (_lock)
-            return Task.FromResult(AppendCore(tenantId, events, dcbQuery, expectedPosition));
+        await _appendGate.WaitAsync(cancellationToken);
+        try
+        {
+            List<EventEnvelope> prepared;
+            lock (_lock)
+                prepared = Prepare(tenantId, events, dcbQuery, expectedPosition);
+
+            if (inTransaction is not null)
+                await inTransaction(prepared, AppendTransaction.None, cancellationToken);
+
+            lock (_lock)
+                Publish(prepared);
+
+            return prepared;
+        }
+        finally
+        {
+            _appendGate.Release();
+        }
     }
 
     /// <summary>
-    /// Shared append logic for single-tenant and multi-tenant paths.
-    /// Must be called under <see cref="_lock"/>.
+    /// Checks the DCB condition and builds every envelope, positions included, without storing anything.
+    /// Must be called under <see cref="_lock"/> by the holder of the gate.
     /// When <paramref name="tenantId"/> is non-null, that ID is stamped on every appended event
     /// and conflict detection is scoped to that tenant only — matching the Postgres behaviour where
     /// DCB boundaries are per-tenant.
     /// </summary>
-    private IReadOnlyCollection<IEventEnvelope> AppendCore(
+    private List<EventEnvelope> Prepare(
         string? tenantId,
         IEnumerable<IEventToPersist> events,
         DcbQuery? dcbQuery,
@@ -353,6 +410,11 @@ internal sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEv
             appended.Add(envelope);
         }
 
+        return appended;
+    }
+
+    private void Publish(List<EventEnvelope> appended)
+    {
         foreach (var envelope in appended)
         {
             var position = envelope.GlobalPosition;
@@ -381,7 +443,6 @@ internal sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEv
         }
 
         _nextPosition += appended.Count;
-        return appended;
     }
 
     public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
@@ -405,7 +466,7 @@ internal sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEv
         }
     }
 
-    // No in-flight transactions in memory, so no barrier and no horizon: the window alone.
+    // An append in flight has published nothing, so no barrier and no horizon: the window alone.
     public Task<HeadSnapshot> GetHeadSnapshotAsync(long afterPosition, int windowSize, CancellationToken cancellationToken)
     {
         lock (_lock)

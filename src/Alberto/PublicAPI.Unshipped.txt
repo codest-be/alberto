@@ -1,1 +1,16 @@
 #nullable enable
+*REMOVED*Alberto.AppendTransaction.AppendTransaction(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction) -> void
+*REMOVED*Alberto.AppendTransaction.Connection.get -> System.Data.Common.DbConnection!
+*REMOVED*Alberto.AppendTransaction.Transaction.get -> System.Data.Common.DbTransaction!
+Alberto.AppendTransaction.AppendTransaction(System.Data.Common.DbConnection? connection, System.Data.Common.DbTransaction? transaction) -> void
+Alberto.AppendTransaction.Connection.get -> System.Data.Common.DbConnection?
+Alberto.AppendTransaction.Transaction.get -> System.Data.Common.DbTransaction?
+static Alberto.AppendTransaction.None.get -> Alberto.AppendTransaction!
+*REMOVED*Alberto.ITransactionalEventStoreBackend
+*REMOVED*Alberto.ITransactionalEventStoreBackend.AppendAsync(System.Collections.Generic.IEnumerable<Alberto.IEventToPersist!>! events, Alberto.DcbQuery? dcbQuery, long? expectedPosition, System.Func<System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>!, Alberto.AppendTransaction!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>! inTransaction, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
+*REMOVED*Alberto.ITransactionalEventStoreBackend.SupportsAppendTransaction.get -> bool
+Alberto.IEventStoreBackend.AppendAsync(System.Collections.Generic.IEnumerable<Alberto.IEventToPersist!>! events, Alberto.DcbQuery? dcbQuery, long? expectedPosition, System.Func<System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>!, Alberto.AppendTransaction!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>! inTransaction, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
+*REMOVED*Alberto.Projections.IInlineProjection.ProcessAsync(System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>! events, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+*REMOVED*Alberto.Projections.ITransactionalInlineProjection
+*REMOVED*Alberto.Projections.ITransactionalInlineProjection.ProcessInTransactionAsync(System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>! events, Alberto.AppendTransaction! transaction, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Projections.IInlineProjection.ProcessAsync(System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>! events, Alberto.AppendTransaction! transaction, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!

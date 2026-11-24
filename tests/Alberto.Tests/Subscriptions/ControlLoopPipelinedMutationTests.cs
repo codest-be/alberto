@@ -96,6 +96,12 @@ public sealed class ControlLoopPipelinedMutationTests
             CancellationToken cancellationToken = default)
             => inner.AppendAsync(events, dcbQuery, expectedPosition, cancellationToken);
 
+        public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+            IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery, long? expectedPosition,
+            Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
+            CancellationToken cancellationToken = default)
+            => inner.AppendAsync(events, dcbQuery, expectedPosition, inTransaction, cancellationToken);
+
         public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
             => inner.GetLastPositionAsync(cancellationToken);
     }
@@ -185,6 +191,12 @@ public sealed class ControlLoopPipelinedMutationTests
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
+        public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+            IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery, long? expectedPosition,
+            Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
         public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
     }
@@ -233,6 +245,12 @@ public sealed class ControlLoopPipelinedMutationTests
 
         public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
             IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery = null, long? expectedPosition = null,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+            IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery, long? expectedPosition,
+            Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 

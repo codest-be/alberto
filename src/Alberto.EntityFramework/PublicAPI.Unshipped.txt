@@ -1,1 +1,6 @@
 #nullable enable
+*REMOVED*Alberto.EntityFramework.Inline.InlineProjectionExhaustedException
+*REMOVED*Alberto.EntityFramework.Inline.InlineProjectionExhaustedException.Attempts.get -> int
+*REMOVED*Alberto.EntityFramework.Inline.InlineProjectionExhaustedException.DocumentCount.get -> int
+*REMOVED*Alberto.EntityFramework.Inline.InlineProjectionExhaustedException.InlineProjectionExhaustedException(string! processorId, int attempts, int documentCount, System.Exception? innerException = null) -> void
+*REMOVED*Alberto.EntityFramework.Inline.InlineProjectionExhaustedException.ProcessorId.get -> string!

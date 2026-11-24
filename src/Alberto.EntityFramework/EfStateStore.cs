@@ -2,7 +2,6 @@ using System.Data.Common;
 using Alberto.Projections;
 using Alberto.Telemetry;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Alberto.EntityFramework;
 
@@ -151,37 +150,32 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IS
     {
         var version = _rebuildVersion.Current;
 
-        IReadOnlyDictionary<string, TEntity> upserts;
-        IReadOnlyCollection<string> deletes;
+        IReadOnlyDictionary<string, TEntity> upserts = new Dictionary<string, TEntity>();
+        IReadOnlyCollection<string> deletes = [];
 
         await using (var context = await _contextFactory.CreateDbContextAsync(cancellationToken))
         {
-            var ids = documentIds as List<string> ?? documentIds.ToList();
-            var existing = await context.Set<TEntity>()
-                .IgnoreQueryFilters([ProjectionQueryFilters.ActiveVersion])
-                .Where(e => ids.Contains(e.DocumentId) && e.RebuildVersion == version)
-                .ToDictionaryAsync(e => e.DocumentId, cancellationToken);
-
-            (upserts, deletes) = fold(existing);
-            if (upserts.Count == 0 && deletes.Count == 0)
-                return false;
-
-            // A handler may mutate the loaded entity in place and then not write it. The
-            // two-read path never persisted that, and change tracking would, so a batch that
-            // leaves a loaded document unwritten and has in-place changes takes that path.
-            var untouched = existing.Keys.Any(id => !upserts.ContainsKey(id) && !deletes.Contains(id));
-            if (!untouched || !context.ChangeTracker.HasChanges())
+            try
             {
-                try
-                {
-                    StageChanges(context, existing, upserts, deletes, version);
-                    await context.SaveChangesAsync(cancellationToken);
+                var outcome = await EfProjectionWriter.LoadFoldSaveAsync<TEntity>(
+                    context,
+                    version,
+                    documentIds,
+                    existing =>
+                    {
+                        (upserts, deletes) = fold(existing);
+                        return (upserts, deletes);
+                    },
+                    cancellationToken);
+
+                if (outcome.Saved)
                     return true;
-                }
-                catch (Exception ex) when (IsRetryableConflict(ex))
-                {
-                    AlbertoMetrics.ConcurrencyConflicts.Add(1, new KeyValuePair<string, object?>("kind", "projection"));
-                }
+                if (outcome.NothingToWrite)
+                    return false;
+            }
+            catch (Exception ex) when (IsRetryableConflict(ex))
+            {
+                AlbertoMetrics.ConcurrencyConflicts.Add(1, new KeyValuePair<string, object?>("kind", "projection"));
             }
         }
 
@@ -200,73 +194,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IS
         CancellationToken cancellationToken)
     {
         await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        var allDocIds = upserts.Keys.Concat(deletes).Distinct().ToList();
-        var existingEntities = await context.Set<TEntity>()
-            .IgnoreQueryFilters([ProjectionQueryFilters.ActiveVersion])
-            .Where(e => allDocIds.Contains(e.DocumentId) && e.RebuildVersion == version)
-            .ToDictionaryAsync(e => e.DocumentId, cancellationToken);
-
-        StageChanges(context, existingEntities, upserts, deletes, version);
-        await context.SaveChangesAsync(cancellationToken);
-    }
-
-    /// <summary>
-    /// Stages a change set on a context that tracks the batch's existing rows.
-    /// </summary>
-    private static void StageChanges(
-        TDbContext context,
-        IReadOnlyDictionary<string, TEntity> existingEntities,
-        IReadOnlyDictionary<string, TEntity> upserts,
-        IReadOnlyCollection<string> deletes,
-        int version)
-    {
-        // Delete-wins: a document ID present in both upserts and deletes must be absent
-        // after the batch. EF cannot express "insert then delete in one statement" the way
-        // the Postgres adapter does (upsert SQL followed by delete SQL in one transaction),
-        // so the same result is achieved by suppressing any upsert whose ID is also being
-        // deleted — the delete then runs uncontested, whether the row exists or not.
-        var deleteSet = deletes.Count > 0 ? new HashSet<string>(deletes) : null;
-
-        foreach (var docId in deletes)
-        {
-            if (existingEntities.TryGetValue(docId, out var existing))
-                context.Set<TEntity>().Remove(existing);
-        }
-
-        foreach (var (docId, newEntity) in upserts)
-        {
-            if (deleteSet?.Contains(docId) == true)
-                continue; // delete wins; skip the upsert for this document
-
-            ProjectionEntityStamp.DocumentId(newEntity, docId);
-            ProjectionEntityStamp.RebuildVersion(newEntity, version);
-            ProjectionEntityStamp.UpdatedAt(newEntity, DateTimeOffset.UtcNow);
-
-            if (existingEntities.TryGetValue(docId, out var existing))
-            {
-                context.Entry(existing).CurrentValues.SetValues(newEntity);
-                CopyOwnedNavigations(context.Entry(existing), newEntity);
-            }
-            else
-            {
-                context.Set<TEntity>().Add(newEntity);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Copies owned-navigation values from <paramref name="source"/> onto a tracked entry in
-    /// one reflection pass.
-    /// </summary>
-    private static void CopyOwnedNavigations(EntityEntry<TEntity> trackedEntry, TEntity source)
-    {
-        foreach (var nav in trackedEntry.Navigations
-                     .Where(n => n.Metadata.TargetEntityType.IsOwned()))
-        {
-            var propInfo = typeof(TEntity).GetProperty(nav.Metadata.Name);
-            if (propInfo != null)
-                nav.CurrentValue = propInfo.GetValue(source);
-        }
+        await EfProjectionWriter.WriteAsync(context, version, upserts, deletes, cancellationToken);
     }
 
     /// <summary>

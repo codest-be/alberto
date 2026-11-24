@@ -13,7 +13,7 @@ namespace Alberto;
 public interface IEventStore
 {
     /// <summary>
-    /// Appends events to the store and runs inline projections immediately after.
+    /// Appends events to the store, running inline projections inside the append (a throw aborts it).
     /// In multi-tenant mode, the tenant is resolved automatically from the current request context.
     /// </summary>
     /// <param name="events">The events to append.</param>

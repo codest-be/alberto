@@ -91,6 +91,17 @@ internal sealed class InMemoryTenantEventStoreDecorator(
         return inner.AppendForTenant(tenantId, events, dcbQuery, expectedPosition, cancellationToken);
     }
 
+    public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+        IEnumerable<IEventToPersist> events,
+        DcbQuery? dcbQuery,
+        long? expectedPosition,
+        Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
+        CancellationToken cancellationToken = default)
+    {
+        var tenantId = tenantAccessor.TenantId;
+        return inner.AppendForTenant(tenantId, events, dcbQuery, expectedPosition, inTransaction, cancellationToken);
+    }
+
     public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
         => inner.GetLastPositionAsync(cancellationToken);
 

@@ -1369,8 +1369,8 @@ public static readonly ProjectionDeclaration<OrderSummary> Declaration =
         .Build();
 ```
 
-`ProjectionResult<TState>`, `ProjectionResults`, `ProjectionContext`, `IStateStore<TState>` and
-`IInlineProjection` are unchanged: only the way handlers are declared changed.
+`ProjectionResult<TState>`, `ProjectionResults`, `ProjectionContext` and `IStateStore<TState>` are
+unchanged: only the way handlers are declared changed.
 
 One behavioural difference worth knowing: `Projection<TState>.Apply` returned `Unchanged` for an
 event it did not handle, while `ProjectionDeclaration<TState>.Apply` throws for an unregistered
@@ -1390,7 +1390,10 @@ Two replacements, depending on what the inline write is for:
   enlists in the appending `DbContext` transaction.
 - **Anything else:** implement `IInlineProjection` directly and register it with
   `configurator.RegisterInlineProjection(projection)`. The interface is two members
-  (`HandledEventTypes` and `ProcessAsync`) and remains public for exactly this.
+  (`HandledEventTypes` and `ProcessAsync(events, transaction, cancellationToken)`) and remains public
+  for exactly this. It runs inside the append, under the append lock, in log order; a throw aborts
+  the append. When `transaction.Connection` is not null, write through it to be atomic with the
+  append. See [Inline vs async](projections.md#inline-vs-async).
 
 ---
 

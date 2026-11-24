@@ -7,7 +7,7 @@ namespace Alberto.Tests;
 
 /// <summary>
 /// Integration tests for <see cref="EventStore"/> over the Postgres backend.
-/// Verifies that events are persisted and projections run immediately after.
+/// Verifies that events are persisted and projections run inside the append.
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture) : IClassFixture<SingleTenantPostgresFixture>
@@ -93,7 +93,8 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
         public IReadOnlySet<string> HandledEventTypes { get; }
 
-        public Task ProcessAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
+        public Task ProcessAsync(
+            IReadOnlyList<IEventEnvelope> events, AppendTransaction transaction, CancellationToken cancellationToken = default)
             => _inner.ProcessBatchAsync(events, cancellationToken);
     }
 
