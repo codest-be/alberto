@@ -145,6 +145,9 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : ITransac
     /// here: a failed statement aborts the transaction, so a failure throws, the append rolls back and
     /// the caller retries the command. The DbContext must be in the events' database and must not use
     /// a retrying execution strategy, which EF refuses to combine with a transaction it did not start.
+    /// When the backend has no database transaction (<see cref="AppendTransaction.None"/>, the in-memory
+    /// backend) the projection writes through a context of its own, still under the backend's append lock
+    /// and before the events become visible, so a failure still aborts the append.
     /// </remarks>
     public async Task ProcessInTransactionAsync(
         IReadOnlyList<IEventEnvelope> events,
@@ -158,21 +161,25 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : ITransac
             return;
 
         await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        GuardJoinable(context, transaction);
-        context.Database.SetDbConnection(transaction.Connection);
-        await context.Database.UseTransactionAsync(transaction.Transaction, cancellationToken);
+        if (transaction.Connection is { } connection)
+        {
+            GuardJoinable(context, connection);
+            context.Database.SetDbConnection(connection);
+            await context.Database.UseTransactionAsync(transaction.Transaction!, cancellationToken);
+        }
+
         await ApplyAsync(context, batch, documentKeys, cancellationToken);
     }
 
-    private void GuardJoinable(TDbContext context, AppendTransaction transaction)
+    private void GuardJoinable(TDbContext context, DbConnection connection)
     {
         var own = context.Database.GetDbConnection();
-        if (!string.Equals(own.DataSource, transaction.Connection.DataSource, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(own.Database, transaction.Connection.Database, StringComparison.Ordinal))
+        if (!string.Equals(own.DataSource, connection.DataSource, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(own.Database, connection.Database, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
                 $"Inline EF projection '{_declaration.ProcessorId}' is not in the event store's database " +
-                $"('{own.DataSource}/{own.Database}' versus '{transaction.Connection.DataSource}/{transaction.Connection.Database}'), " +
+                $"('{own.DataSource}/{own.Database}' versus '{connection.DataSource}/{connection.Database}'), " +
                 "so it cannot be written in the append's transaction. Point its DbContext at the event store's " +
                 "database, or register the projection as ProjectionMode.Async.");
         }

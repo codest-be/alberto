@@ -1,1 +1,8 @@
 #nullable enable
+*REMOVED*Alberto.AppendTransaction.AppendTransaction(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction) -> void
+*REMOVED*Alberto.AppendTransaction.Connection.get -> System.Data.Common.DbConnection!
+*REMOVED*Alberto.AppendTransaction.Transaction.get -> System.Data.Common.DbTransaction!
+Alberto.AppendTransaction.AppendTransaction(System.Data.Common.DbConnection? connection, System.Data.Common.DbTransaction? transaction) -> void
+Alberto.AppendTransaction.Connection.get -> System.Data.Common.DbConnection?
+Alberto.AppendTransaction.Transaction.get -> System.Data.Common.DbTransaction?
+static Alberto.AppendTransaction.None.get -> Alberto.AppendTransaction!
