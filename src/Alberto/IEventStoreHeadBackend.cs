@@ -78,8 +78,10 @@ public sealed record HeadWindow(IReadOnlyList<long> Positions, TransactionHorizo
 
 /// <summary>
 /// A snapshot's transaction horizon: every transaction id below <see cref="OldestRunning"/> had ended
-/// when it was taken, and none at or above <see cref="NextToStart"/> had started.
-/// <see cref="LastPosition"/> is the highest position that snapshot saw (0 when the log is empty).
+/// when it was taken, and every transaction that drew a position at or below <see cref="LastPosition"/>,
+/// the highest position that snapshot saw (0 when the log is empty), has an id below
+/// <see cref="NextToStart"/>. On Postgres the snapshot's xmax is not such a bound: it is the newest
+/// completed id plus one, and a transaction still running can be newer (codest-be/alberto#294).
 /// </summary>
 public sealed record TransactionHorizon(long OldestRunning, long NextToStart, long LastPosition);
 
