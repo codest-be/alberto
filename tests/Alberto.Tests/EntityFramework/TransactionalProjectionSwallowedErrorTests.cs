@@ -21,7 +21,7 @@ public sealed class TransactionalProjectionSwallowedErrorTests(EfEventStoreFixtu
         {
             try
             {
-                await using var cmd = new NpgsqlCommand("select 1/0", (NpgsqlConnection)tx.Connection, (NpgsqlTransaction)tx.Transaction);
+                await using var cmd = new NpgsqlCommand("select 1/0", (NpgsqlConnection)tx.Connection!, (NpgsqlTransaction)tx.Transaction!);
                 await cmd.ExecuteNonQueryAsync(ct);
             }
             catch (PostgresException) { }
