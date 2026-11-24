@@ -21,7 +21,7 @@ namespace Alberto.InMemory;
 /// </remarks>
 internal sealed class InMemoryTenantEventStoreDecorator(
     InMemoryEventStoreBackend inner,
-    ITenantAccessor tenantAccessor) : IEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
+    ITenantAccessor tenantAccessor) : ITransactionalEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
 {
     public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
         DcbQuery query,
@@ -89,6 +89,19 @@ internal sealed class InMemoryTenantEventStoreDecorator(
     {
         var tenantId = tenantAccessor.TenantId;
         return inner.AppendForTenant(tenantId, events, dcbQuery, expectedPosition, cancellationToken);
+    }
+
+    public bool SupportsAppendTransaction => true;
+
+    public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+        IEnumerable<IEventToPersist> events,
+        DcbQuery? dcbQuery,
+        long? expectedPosition,
+        Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
+        CancellationToken cancellationToken = default)
+    {
+        var tenantId = tenantAccessor.TenantId;
+        return inner.AppendForTenant(tenantId, events, dcbQuery, expectedPosition, inTransaction, cancellationToken);
     }
 
     public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)

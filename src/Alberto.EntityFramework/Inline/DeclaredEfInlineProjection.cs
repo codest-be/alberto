@@ -7,8 +7,9 @@ namespace Alberto.EntityFramework.Inline;
 
 /// <summary>
 /// Inline EF projection driven by a <see cref="ProjectionDeclaration{TEntity}"/>.
-/// Runs immediately after <see cref="IEventStore.AppendAsync"/> commits, providing
-/// read-your-writes consistency at the cost of coupling projection latency and failure
+/// Runs inside <see cref="IEventStore.AppendAsync"/> (<see cref="ProcessInTransactionAsync"/>) on a backend
+/// that supports it, and straight after it commits (<see cref="ProcessAsync"/>) on one that does not,
+/// providing read-your-writes consistency at the cost of coupling projection latency and failure
 /// to the originating mutation.
 /// </summary>
 /// <remarks>

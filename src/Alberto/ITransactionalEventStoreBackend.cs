@@ -7,6 +7,9 @@ namespace Alberto;
 /// <remarks>
 /// Optional: <see cref="EventStore"/> runs <see cref="Projections.ITransactionalInlineProjection"/>s through
 /// this when <see cref="SupportsAppendTransaction"/> is true and after the commit otherwise.
+/// A backend with no database transaction can still implement it: it holds its append lock, runs the work
+/// with <see cref="AppendTransaction.None"/> before the events become visible, and discards them if the
+/// work throws. The in-memory backend does this.
 /// </remarks>
 public interface ITransactionalEventStoreBackend : IEventStoreBackend
 {
@@ -16,7 +19,8 @@ public interface ITransactionalEventStoreBackend : IEventStoreBackend
     /// <summary>
     /// As <see cref="IEventStore.AppendAsync"/>, and after the events are inserted, still inside the
     /// transaction, awaits <paramref name="inTransaction"/>. If it throws, the append is rolled back
-    /// and the exception propagates; otherwise the transaction commits.
+    /// (or, without a database transaction, never published) and the exception propagates;
+    /// otherwise the transaction commits.
     /// </summary>
     Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
         IEnumerable<IEventToPersist> events,

@@ -304,8 +304,14 @@ events in log order and a projection that throws rolls the append back. This has
   it did not start. The append throws a clear error.
 - The append lock is held for as long as the projection runs, so keep it short.
 
-Backends that cannot share a transaction (the in-memory backend) run the projection after the append,
-as before. Post-append handlers and reactors always run after commit.
+The in-memory backend has no database transaction, but it gives the same ordering and the same failure
+behaviour: appends take turns, the projection runs before the events become visible, and a projection that
+throws leaves no events behind and takes no position. Reads and the head are never blocked by it. Its
+writes are its own, so they do not roll back with the append, and the DbContext may point at any database.
+Two things follow: a projection (or anything it calls) must not append to the same in-memory store, or it
+waits for itself, and a slow projection makes every other append to that store wait. Only a third-party
+backend that cannot share a transaction at all runs the projection after the append, unordered. Post-append
+handlers and reactors always run after commit.
 
 A projection you write yourself and register with `RegisterInlineProjection` gets the same
 guarantee only if it implements `ITransactionalInlineProjection`. A plain `IInlineProjection` runs
