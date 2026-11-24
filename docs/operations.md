@@ -349,7 +349,7 @@ yourself.
 | `alberto.load` | Internal | The boundary read of an attempt: `alberto.load.events`, `.position`, `.types`, `.tags` |
 | `alberto.decide` | Internal | The decision of an attempt: `alberto.decide.outcome`, `alberto.problem.codes` on rejection |
 | `alberto.read` | Client / Internal | A read from the event store: `alberto.read.after_position`, `.limit`, `.events`; `db.system.name` (and kind Client) only on Postgres |
-| `alberto.projection.inline` | Internal | One inline projection run after a commit: `alberto.projection.type`, `alberto.projection.events`. A sibling of `append` under the caller's span, not a child: the append span has already ended |
+| `alberto.projection.inline` | Internal | One inline projection run inside the append: `alberto.projection.type`, `alberto.projection.events`. A child of the backend's `append` span |
 | `alberto.poll` | Internal | One control-loop poll: `alberto.poll.after_position`, `alberto.poll.events`. The `alberto.read` it issues is its child |
 | `alberto.checkpoint.save` | Internal | One checkpoint write: `alberto.checkpoint.position` |
 | `alberto.lease.acquire` / `.renew` / `.release` | Internal | Processor-lease work of a lease-aware group: `alberto.consumer.id`, `alberto.replica.id`; acquire adds `alberto.lease.acquired` and `alberto.lease.fence_token`, renew adds `alberto.lease.renewed` and `alberto.lease.lost` |

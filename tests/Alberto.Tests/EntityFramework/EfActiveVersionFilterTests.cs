@@ -156,8 +156,8 @@ public sealed class EfActiveVersionFilterTests(StateStoreRebuildVersionFixture f
         var inline = new DeclaredEfInlineProjection<ActiveCounterEntity, EfTestDbContext>(
             Declaration(), fixture.ContextFactory(), ProjectionVersion.From(() => 1));
 
-        await inline.ProcessAsync([EfTestEnvelopes.ForCounterIncremented(docId, 1, position: 1)], Ct);
-        await inline.ProcessAsync([EfTestEnvelopes.ForCounterIncremented(docId, 2, position: 2)], Ct);
+        await inline.ProcessAsync([EfTestEnvelopes.ForCounterIncremented(docId, 1, position: 1)], AppendTransaction.None, Ct);
+        await inline.ProcessAsync([EfTestEnvelopes.ForCounterIncremented(docId, 2, position: 2)], AppendTransaction.None, Ct);
 
         await using var context = await fixture.ContextFactory().CreateDbContextAsync(Ct);
         var v1 = await context.ActiveCounters

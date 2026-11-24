@@ -70,6 +70,12 @@ public sealed class ControlLoopResilienceTests
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
+        public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+            IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery, long? expectedPosition,
+            Func<IReadOnlyList<IEventEnvelope>, AppendTransaction, CancellationToken, Task> inTransaction,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
         public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
     }

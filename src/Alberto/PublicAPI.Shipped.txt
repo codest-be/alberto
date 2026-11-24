@@ -26,9 +26,9 @@ Alberto.Append.AppendContext.WithEvents(System.Collections.Generic.IReadOnlyList
 Alberto.Append.IAppendInterceptor
 Alberto.Append.IAppendInterceptor.OnAppendingAsync(Alberto.Append.AppendContext! context, System.Func<Alberto.Append.AppendContext!, System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!>! next, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
 Alberto.AppendTransaction
-Alberto.AppendTransaction.AppendTransaction(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction) -> void
-Alberto.AppendTransaction.Connection.get -> System.Data.Common.DbConnection!
-Alberto.AppendTransaction.Transaction.get -> System.Data.Common.DbTransaction!
+Alberto.AppendTransaction.AppendTransaction(System.Data.Common.DbConnection? connection, System.Data.Common.DbTransaction? transaction) -> void
+Alberto.AppendTransaction.Connection.get -> System.Data.Common.DbConnection?
+Alberto.AppendTransaction.Transaction.get -> System.Data.Common.DbTransaction?
 Alberto.Checkpoints.ICheckpointInventory
 Alberto.Checkpoints.ICheckpointInventory.CanEnumerate.get -> bool
 Alberto.Checkpoints.ICheckpointInventory.ListProcessorIdsAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
@@ -564,6 +564,7 @@ Alberto.IEventStore.ReadAsync(Alberto.DcbQuery! query, long afterPosition, int l
 Alberto.IEventStore.StreamAllAsync(long afterPosition = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Alberto.IEventEnvelope!>!
 Alberto.IEventStore.StreamAsync(Alberto.DcbQuery! query, long afterPosition = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Alberto.IEventEnvelope!>!
 Alberto.IEventStoreBackend
+Alberto.IEventStoreBackend.AppendAsync(System.Collections.Generic.IEnumerable<Alberto.IEventToPersist!>! events, Alberto.DcbQuery? dcbQuery, long? expectedPosition, System.Func<System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>!, Alberto.AppendTransaction!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>! inTransaction, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
 Alberto.IEventStoreBackend.ReadAllOfTypesAsync(System.Collections.Generic.IReadOnlySet<string!>! eventTypes, long afterPosition, int limit, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
 Alberto.IEventStoreHeadBackend
 Alberto.IEventStoreHeadBackend.GetPositionWindowAsync(long afterPosition, int windowSize, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.HeadWindow!>!
@@ -585,9 +586,6 @@ Alberto.IEvolve<TState, TEvent>.Apply(TState state, TEvent event) -> TState
 Alberto.IGeneratedEvolver<TState>
 Alberto.IGeneratedEvolver<TState>.EvolveTable() -> System.Collections.Generic.IReadOnlyList<(System.Type! EventType, System.Func<TState, object!, TState>! Apply)>!
 Alberto.IGeneratedEvolver<TState>.GeneratedFor.get -> System.Type!
-Alberto.ITransactionalEventStoreBackend
-Alberto.ITransactionalEventStoreBackend.AppendAsync(System.Collections.Generic.IEnumerable<Alberto.IEventToPersist!>! events, Alberto.DcbQuery? dcbQuery, long? expectedPosition, System.Func<System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>!, Alberto.AppendTransaction!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>! inTransaction, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
-Alberto.ITransactionalEventStoreBackend.SupportsAppendTransaction.get -> bool
 Alberto.Leases.IProcessorLease
 Alberto.Leases.IProcessorLease.ExpiresAt.get -> System.DateTimeOffset
 Alberto.Leases.IProcessorLease.FenceToken.get -> long
@@ -614,7 +612,7 @@ Alberto.Projections.ConcurrencyConflictException.DocumentId.get -> string!
 Alberto.Projections.DeclareProjection
 Alberto.Projections.IInlineProjection
 Alberto.Projections.IInlineProjection.HandledEventTypes.get -> System.Collections.Generic.IReadOnlySet<string!>!
-Alberto.Projections.IInlineProjection.ProcessAsync(System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>! events, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Projections.IInlineProjection.ProcessAsync(System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>! events, Alberto.AppendTransaction! transaction, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Projections.IProjectionEntity
 Alberto.Projections.IProjectionEntity.DocumentId.get -> string!
 Alberto.Projections.IProjectionEntity.LastProcessedPosition.get -> long
@@ -634,8 +632,6 @@ Alberto.Projections.IStateStore<TState>
 Alberto.Projections.IStateStore<TState>.ApplyChangesAsync(System.Collections.Generic.IReadOnlyDictionary<string!, TState>! upserts, System.Collections.Generic.IReadOnlyCollection<string!>! deletes, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Projections.IStateStore<TState>.ListRecentAsync(int limit = 20, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TState>!>!
 Alberto.Projections.IStateStore<TState>.LoadManyAsync(System.Collections.Generic.IEnumerable<string!>! documentIds, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, TState>!>!
-Alberto.Projections.ITransactionalInlineProjection
-Alberto.Projections.ITransactionalInlineProjection.ProcessInTransactionAsync(System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>! events, Alberto.AppendTransaction! transaction, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Projections.ProjectionCatchUp
 Alberto.Projections.ProjectionCatchUp.ProjectionCatchUp(Alberto.IEventStoreBackend! eventStore, Alberto.Checkpoints.ICheckpointStore! checkpoints, System.TimeSpan? defaultTimeout = null, System.TimeSpan? pollInterval = null) -> void
 Alberto.Projections.ProjectionCatchUp.WaitForProjectionAsync(string! processorId, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -1183,6 +1179,7 @@ static Alberto.AlbertoModuleBuilderExtensions.WithRebuilds(this Alberto.AlbertoM
 static Alberto.AlbertoServiceCollectionExtensions.AddAlberto(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! moduleKey, System.Action<Alberto.AlbertoModuleBuilder!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static Alberto.Append.AppendContext.operator !=(Alberto.Append.AppendContext? left, Alberto.Append.AppendContext? right) -> bool
 static Alberto.Append.AppendContext.operator ==(Alberto.Append.AppendContext? left, Alberto.Append.AppendContext? right) -> bool
+static Alberto.AppendTransaction.None.get -> Alberto.AppendTransaction!
 static Alberto.Configuration.AlbertoModuleContextExtensions.AddEventStoreBackend(this Alberto.Configuration.AlbertoModuleContext! context, Microsoft.Extensions.DependencyInjection.ServiceLifetime lifetime, System.Func<System.IServiceProvider!, Alberto.IEventStoreBackend!>! factory, string? keySuffix = null, string? dbSystem = null) -> void
 static Alberto.Configuration.AlbertoModuleDefinition.ApplyConfiguration(Alberto.Configuration.AlbertoModuleDefinition! definition, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> Alberto.Configuration.AlbertoModuleDefinition!
 static Alberto.Configuration.AlbertoModuleDefinition.operator !=(Alberto.Configuration.AlbertoModuleDefinition? left, Alberto.Configuration.AlbertoModuleDefinition? right) -> bool

@@ -79,30 +79,24 @@ public sealed class EventStore : IEventStore, IEventStoreConfigurator
         }
 
         var eventList = events.ToList();
-        var inTransaction = _backend is ITransactionalEventStoreBackend { SupportsAppendTransaction: true } transactional
-            ? transactional
-            : null;
-        var ranInTransaction = inTransaction is null
-            ? []
-            : _inlineProjections
-                .OfType<ITransactionalInlineProjection>()
-                .Where(p => eventList.Any(e => p.HandledEventTypes.Contains(e.EventType.Id)))
-                .ToHashSet();
+        var projections = _inlineProjections
+            .Where(p => eventList.Any(e => p.HandledEventTypes.Contains(e.EventType.Id)))
+            .ToList();
 
-        var appended = ranInTransaction.Count == 0
+        var appended = projections.Count == 0
             ? await _backend.AppendAsync(eventList, dcbQuery, expectedPosition, cancellationToken)
-            : await inTransaction!.AppendAsync(
+            : await _backend.AppendAsync(
                 eventList,
                 dcbQuery,
                 expectedPosition,
                 async (inserted, transaction, token) =>
                 {
-                    foreach (var projection in ranInTransaction)
+                    foreach (var projection in projections)
                     {
                         var relevant = RelevantTo(projection, inserted);
                         if (relevant.Count > 0)
                             await ProjectInlineAsync(
-                                projection, relevant.Count, () => projection.ProcessInTransactionAsync(relevant, transaction, token));
+                                projection, relevant.Count, () => projection.ProcessAsync(relevant, transaction, token));
                     }
                 },
                 cancellationToken);
@@ -111,18 +105,6 @@ public sealed class EventStore : IEventStore, IEventStoreConfigurator
             return appended;
 
         var appendedList = appended.ToList();
-
-        foreach (var projection in _inlineProjections)
-        {
-            if (projection is ITransactionalInlineProjection transactionalProjection
-                && ranInTransaction.Contains(transactionalProjection))
-                continue;
-
-            var relevant = RelevantTo(projection, appendedList);
-
-            if (relevant.Count > 0)
-                await ProjectInlineAsync(projection, relevant.Count, () => projection.ProcessAsync(relevant, cancellationToken));
-        }
 
         foreach (var handler in _postAppendHandlers)
         {
@@ -143,8 +125,7 @@ public sealed class EventStore : IEventStore, IEventStoreConfigurator
     /// <summary>
     /// Runs one inline projection under an <c>alberto.projection.inline</c> span. Not a root: it is
     /// part of the caller's own work and fails it if it throws, so it nests under whatever span
-    /// the caller has (a command's, typically). A transactional projection runs inside the
-    /// backend's <c>append</c> span; the others run beside it, after it has ended.
+    /// the caller has (a command's, typically). It runs inside the backend's <c>append</c> span.
     /// </summary>
     private static async Task ProjectInlineAsync(IInlineProjection projection, int eventCount, Func<Task> process)
     {

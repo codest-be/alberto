@@ -8,9 +8,8 @@ using Xunit;
 namespace Alberto.Tests.EntityFramework;
 
 /// <summary>
-/// Inline projections that ran after the append commits, outside the append lock, let two appends
-/// to one document project in the reverse of their log order, and the position guard then
-/// discarded the earlier event for good.
+/// Inline projections run inside the append, under the append lock, so two appends to one document
+/// project in log order however slow the first projection is.
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class EfInlineProjectionOrderingTests(EfEventStoreFixture fixture)
@@ -127,7 +126,7 @@ public sealed class EfInlineProjectionOrderingTests(EfEventStoreFixture fixture)
         Assert.Equal("projection failed", exception.Message, ignoreCase: true);
         var after = await store.ReadAsync(DcbQuery.ByTypes("counter-incremented"), 0, 100_000, cancellationToken);
         Assert.Equal(before.Count, after.Count);
-        Assert.Null((await fixture.ReadEntityAsync(entityId)));
+        Assert.Null(await fixture.ReadEntityAsync(entityId));
         await store.AppendAsync([Increment(entityId, 2)], cancellationToken: cancellationToken)
             .WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
         // the failed append released the append lock
@@ -194,7 +193,7 @@ public sealed class EfInlineProjectionOrderingTests(EfEventStoreFixture fixture)
     };
 
     private sealed class SlowFirstRun(DeclaredEfInlineProjection<CounterEntity, EfTestDbContext> inner)
-        : ITransactionalInlineProjection
+        : IInlineProjection
     {
         private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -206,17 +205,11 @@ public sealed class EfInlineProjectionOrderingTests(EfEventStoreFixture fixture)
 
         public IReadOnlySet<string> HandledEventTypes => inner.HandledEventTypes;
 
-        public async Task ProcessAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
-        {
-            await StallFirstRunAsync(cancellationToken);
-            await inner.ProcessAsync(events, cancellationToken);
-        }
-
-        public async Task ProcessInTransactionAsync(
+        public async Task ProcessAsync(
             IReadOnlyList<IEventEnvelope> events, AppendTransaction transaction, CancellationToken cancellationToken = default)
         {
             await StallFirstRunAsync(cancellationToken);
-            await inner.ProcessInTransactionAsync(events, transaction, cancellationToken);
+            await inner.ProcessAsync(events, transaction, cancellationToken);
         }
 
         private async Task StallFirstRunAsync(CancellationToken cancellationToken)

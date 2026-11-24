@@ -42,7 +42,7 @@ public sealed class EfInlineProjectionRebuildVersionTests(EfProjectionTestFixtur
 
         var act = async () => await projection.ProcessAsync(
             [EfTestEnvelopes.ForCounterIncremented(entityId, amount: 7, position: 1)],
-            cancellationToken: TestContext.Current.CancellationToken);
+            AppendTransaction.None, TestContext.Current.CancellationToken);
 
         await act();
 
@@ -77,7 +77,7 @@ public sealed class EfInlineProjectionRebuildVersionTests(EfProjectionTestFixtur
 
         await projection.ProcessAsync(
             [EfTestEnvelopes.ForCounterIncremented(entityId, amount: 7, position: 10)],
-            cancellationToken: TestContext.Current.CancellationToken);
+            AppendTransaction.None, TestContext.Current.CancellationToken);
 
         var versions = await fixture.ReadVersionsAsync(entityId);
         Assert.Equal(7, versions[2].Counter);
@@ -96,7 +96,7 @@ public sealed class EfInlineProjectionRebuildVersionTests(EfProjectionTestFixtur
 
         await projection.ProcessAsync(
             [EfTestEnvelopes.ForCounterIncremented(entityId, amount: 4, position: 1)],
-            cancellationToken: TestContext.Current.CancellationToken);
+            AppendTransaction.None, TestContext.Current.CancellationToken);
 
         // Without an explicit stamp this row lands on the column default (1) instead, which
         // reads correctly only for as long as the live version happens to be 1.

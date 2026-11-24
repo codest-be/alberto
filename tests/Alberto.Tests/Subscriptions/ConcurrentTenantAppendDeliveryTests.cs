@@ -87,7 +87,7 @@ public sealed class ConcurrentTenantAppendDeliveryTests(MultiTenantDbFixture fix
 
     private static async Task WorkAsync(AppendTransaction tx, double seconds, CancellationToken ct)
     {
-        await using var cmd = tx.Connection.CreateCommand();
+        await using var cmd = tx.Connection!.CreateCommand();
         cmd.Transaction = tx.Transaction;
         cmd.CommandText = $"SELECT pg_sleep({seconds.ToString(CultureInfo.InvariantCulture)})";
         await cmd.ExecuteNonQueryAsync(ct);

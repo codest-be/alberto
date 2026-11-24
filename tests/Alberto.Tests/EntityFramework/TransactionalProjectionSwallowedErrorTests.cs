@@ -12,15 +12,14 @@ namespace Alberto.Tests.EntityFramework;
 [Trait("Category", "Integration")]
 public sealed class TransactionalProjectionSwallowedErrorTests(EfEventStoreFixture fixture) : IClassFixture<EfEventStoreFixture>
 {
-    private sealed class SwallowingProjection : ITransactionalInlineProjection
+    private sealed class SwallowingProjection : IInlineProjection
     {
         public IReadOnlySet<string> HandledEventTypes { get; } = new HashSet<string> { "counter-incremented" };
-        public Task ProcessAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default) => Task.CompletedTask;
-        public async Task ProcessInTransactionAsync(IReadOnlyList<IEventEnvelope> events, AppendTransaction tx, CancellationToken ct = default)
+        public async Task ProcessAsync(IReadOnlyList<IEventEnvelope> events, AppendTransaction tx, CancellationToken ct = default)
         {
             try
             {
-                await using var cmd = new NpgsqlCommand("select 1/0", (NpgsqlConnection)tx.Connection, (NpgsqlTransaction)tx.Transaction);
+                await using var cmd = new NpgsqlCommand("select 1/0", (NpgsqlConnection)tx.Connection!, (NpgsqlTransaction)tx.Transaction!);
                 await cmd.ExecuteNonQueryAsync(ct);
             }
             catch (PostgresException) { }
