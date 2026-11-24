@@ -212,7 +212,7 @@ middleware chain, save the checkpoint, sleep. Details in
 [architecture/async-processing.md](architecture/async-processing.md).
 
 Projections and reactors can also run **inline**, synchronously inside `AppendAsync`, before it
-returns, trading read-your-writes consistency for latency and coupled failures.
+returns, trading write latency and coupled failures for read-your-writes consistency.
 
 ## Modules
 

@@ -295,30 +295,31 @@ parameter's default is correct there.
 | Latency cost | None on the write path | Its write latency, added to every mutation |
 | Rebuildable | Yes | **No.** Inline projections register no state clearer |
 
-Inline EF projections on Postgres are atomic with the append. The projection runs inside the append
-transaction, after the events are inserted and while the per-tenant append lock is held, so it sees
-events in log order and a projection that throws rolls the append back. This has costs:
+An inline projection always runs inside the append: after the events are inserted, while the backend's
+append lock is held, before the events become visible. Appends take turns, so it sees events in log
+order, and a projection that throws aborts the append (no events, no position). There is no other
+inline mode; work that should follow the commit is a post-append handler or a reactor.
+
+On Postgres the projection joins the append transaction and its writes roll back with it. This has costs:
 
 - The DbContext must point at the same database as the events. Otherwise the first append throws.
 - The DbContext must not use `EnableRetryOnFailure`: EF refuses a retrying strategy inside a transaction
   it did not start. The append throws a clear error.
 - The append lock is held for as long as the projection runs, so keep it short.
 
-The in-memory backend has no database transaction, but it gives the same ordering and the same failure
-behaviour: appends take turns, the projection runs before the events become visible, and a projection that
-throws leaves no events behind and takes no position. Reads and the head are never blocked by it. Its
-writes are its own, so they do not roll back with the append, and the DbContext may point at any database.
-Two things follow: a projection (or anything it calls) must not append to the same in-memory store, or it
-waits for itself, and a slow projection makes every other append to that store wait. Only a third-party
-backend that cannot share a transaction at all runs the projection after the append, unordered. Post-append
-handlers and reactors always run after commit.
+The in-memory backend has no database transaction, so a projection receives `AppendTransaction.None`
+and writes through a context of its own. The ordering and the failure behaviour are the same: the
+projection runs before the events become visible, and one that throws leaves no events behind and takes
+no position. Reads and the head are never blocked by it. Its writes do not roll back with the append,
+and the DbContext may point at any database. Two things follow: a projection (or anything it calls)
+must not append to the same in-memory store, or it waits for itself, and a slow projection makes every
+other append to that store wait.
 
-A projection you write yourself and register with `RegisterInlineProjection` gets the same
-guarantee only if it implements `ITransactionalInlineProjection`. A plain `IInlineProjection` runs
-after the append commits, outside the lock: two concurrent appends that touch the same row can
-reach it in either order, and a projection that skips events at or below the row's stored position
-then loses the earlier one. Use it for writes where order does not matter; anything keyed by a
-position needs `ITransactionalInlineProjection`.
+A projection you write yourself and register with `RegisterInlineProjection` implements
+`IInlineProjection.ProcessAsync(events, transaction, cancellationToken)`. When
+`transaction.Connection` is not null, write through that connection and transaction so the writes are
+atomic with the append; otherwise write however you like. Do not catch and swallow a database error
+inside a Postgres transaction: the transaction is already aborted, and the append fails at commit.
 
 Use `Inline` only for narrow per-user projections the caller will immediately re-query. Everything
 else should be `Async`; "the UI flickers" is better solved by returning the decision's own result

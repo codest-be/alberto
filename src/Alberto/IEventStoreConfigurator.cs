@@ -16,7 +16,7 @@ namespace Alberto;
 internal interface IEventStoreConfigurator
 {
     /// <summary>
-    /// Registers an inline projection that runs immediately after events are appended.
+    /// Registers an inline projection that runs inside the append, under the backend's append lock, in log order.
     /// Accepts any <see cref="IInlineProjection"/> implementation —
     /// used by declaration-based projection wiring.
     /// </summary>
