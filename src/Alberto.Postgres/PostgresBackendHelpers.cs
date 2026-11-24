@@ -587,10 +587,24 @@ internal static class PostgresBackendHelpers
     }
 
     /// <summary>
+    /// The horizon's <see cref="TransactionHorizon.NextToStart"/>: a transaction id no transaction that
+    /// drew a position at or below the snapshot's last position can have reached (codest-be/alberto#294).
+    /// The snapshot's xmax is not one: Postgres sets it to the newest completed xid plus one, so an open
+    /// append whose xid is newer than every completed one sits at or above it, outside xmin and the
+    /// running set too, and a gap it drew was proven permanent in the very snapshot that saw it. The
+    /// append takes its xid before it draws a position, and the statement takes its own xid after its
+    /// snapshot, so every such transaction's xid is below the statement's. Taking an xid costs one, so
+    /// the statement takes it only when the window <c>w</c> has a gap, the only time the head reads the
+    /// bound; otherwise it reports xmax.
+    /// </summary>
+    private const string NextToStartSql =
+        "CASE WHEN (SELECT count(*) FROM w) < (SELECT COALESCE(max(global_position), @after) FROM w) - @after " +
+        "THEN pg_current_xact_id()::TEXT::BIGINT ELSE pg_snapshot_xmax(s)::TEXT::BIGINT END";
+
+    /// <summary>
     /// <see cref="GetPositionsAsync"/> plus the transaction horizon of the snapshot the positions were
     /// read in and the last position it saw, in one statement so all come from the same snapshot (<c>pg_current_snapshot()</c> is
-    /// the statement's snapshot). The append takes its xid before it draws a position, so every
-    /// position below one this snapshot sees was drawn by a transaction older than its xmax.
+    /// the statement's snapshot). See <see cref="NextToStartSql"/> for the horizon's upper bound.
     /// </summary>
     internal static async Task<HeadWindow> GetPositionWindowAsync(
         SchemaQualifier schema, NpgsqlDataSource dataSource,
@@ -598,9 +612,11 @@ internal static class PostgresBackendHelpers
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
-            "SELECT pg_snapshot_xmin(s)::TEXT::BIGINT, pg_snapshot_xmax(s)::TEXT::BIGINT, ARRAY(" +
+            "WITH w AS MATERIALIZED (" +
             $"SELECT global_position FROM {schema.Table("alberto_events")} " +
-            "WHERE global_position > @after ORDER BY global_position LIMIT @limit), " +
+            "WHERE global_position > @after ORDER BY global_position LIMIT @limit) " +
+            $"SELECT pg_snapshot_xmin(s)::TEXT::BIGINT, {NextToStartSql}, " +
+            "ARRAY(SELECT global_position FROM w ORDER BY global_position), " +
             $"(SELECT COALESCE(max(global_position), 0) FROM {schema.Table("alberto_events")}) " +
             "FROM pg_current_snapshot() s",
             connection);
@@ -628,7 +644,7 @@ internal static class PostgresBackendHelpers
             "WITH w AS MATERIALIZED (" +
             $"SELECT global_position, event_type, pg_xact_id FROM {schema.Table("alberto_events")} " +
             "WHERE global_position > @after ORDER BY global_position LIMIT @limit) " +
-            "SELECT pg_snapshot_xmin(s)::TEXT::BIGINT, pg_snapshot_xmax(s)::TEXT::BIGINT, " +
+            $"SELECT pg_snapshot_xmin(s)::TEXT::BIGINT, {NextToStartSql}, " +
             "ARRAY(SELECT global_position FROM w ORDER BY global_position), " +
             $"(SELECT COALESCE(max(global_position), 0) FROM {schema.Table("alberto_events")}), " +
             "(SELECT min(global_position) FROM w WHERE @barrier AND pg_xact_id IS NOT NULL " +

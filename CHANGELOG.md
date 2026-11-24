@@ -15,8 +15,16 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ## [Unreleased]
 
+---
+
+## [0.16.1] - 2026-11-24
+
+Two fixes for processors on Postgres. Upgrade if you append from several tenants at once or run
+processors with leases. No migrations, no API changes.
+
 ### Fixed
 
+- Under concurrent appends from several tenants, a committed event could be passed by every caught-up processor and never projected or reacted to, with nothing behind, faulted or dead-lettered. The head proved a gap in the log permanent against the snapshot's `xmax`, which Postgres sets to the newest *completed* transaction id plus one, so an open append with a newer id was invisible to the proof. When it sees a gap, the head now bounds the proof by its own transaction id, and stays below the gap until every append that could fill it has ended. A head poll that sees a gap now takes one transaction id; polls without a gap are unchanged. Affects 0.15.x and 0.16.0 (#294)
 - With leases on, a processor's dead-letter retries now run only on the replica that holds its lease, and between its live dispatches there, never beside one. Before, every replica claimed and ran them, so a retry could run beside a live event for the same processor. A replica that loses the lease leaves its claimed entries for the new holder once their claim lease expires. With leases off nothing changes (#290)
 
 ---
@@ -1188,7 +1196,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.16.1...HEAD
+[0.16.1]: https://github.com/codest-be/alberto/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/codest-be/alberto/compare/v0.15.2...v0.16.0
 [0.15.2]: https://github.com/codest-be/alberto/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/codest-be/alberto/compare/v0.15.0...v0.15.1
