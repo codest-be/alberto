@@ -1,7 +1,6 @@
 using Alberto;
 using Alberto.Configuration;
 using Alberto.InMemory;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -25,8 +24,8 @@ public class StartupValidationTests
 
         var act = async () => await host.StartAsync(TestContext.Current.CancellationToken);
 
-        var exception = await act.Should().ThrowAsync<OptionsValidationException>();
-        exception.Which.Message.Should().Contain("ALB0001");
+        var exception = await Assert.ThrowsAnyAsync<OptionsValidationException>(act);
+        Assert.Contains("ALB0001", exception.Message);
     }
 
     [Fact]
@@ -36,10 +35,10 @@ public class StartupValidationTests
 
         var act = async () => await host.StartAsync(TestContext.Current.CancellationToken);
 
-        var exception = await act.Should().ThrowAsync<OptionsValidationException>();
-        exception.Which.Message.Should().Contain("Alberto module 'orders' cannot start");
-        exception.Which.Message.Should().Contain("AddAlberto(\"orders\", ...)");
-        exception.Which.Message.Should().Contain("Alberto:Modules:orders");
+        var exception = await Assert.ThrowsAnyAsync<OptionsValidationException>(act);
+        Assert.Contains("Alberto module 'orders' cannot start", exception.Message);
+        Assert.Contains("AddAlberto(\"orders\", ...)", exception.Message);
+        Assert.Contains("Alberto:Modules:orders", exception.Message);
     }
 
     [Fact]
@@ -49,8 +48,8 @@ public class StartupValidationTests
 
         var act = async () => await host.StartAsync(TestContext.Current.CancellationToken);
 
-        var exception = await act.Should().ThrowAsync<OptionsValidationException>();
-        exception.Which.Message.Should().Contain("ALB0023");
+        var exception = await Assert.ThrowsAnyAsync<OptionsValidationException>(act);
+        Assert.Contains("ALB0023", exception.Message);
     }
 
     [Fact]

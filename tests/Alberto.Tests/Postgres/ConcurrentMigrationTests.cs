@@ -1,6 +1,5 @@
 using Alberto.Postgres;
 using Alberto.Tests.Infrastructure;
-using FluentAssertions;
 using Npgsql;
 using Xunit;
 
@@ -38,16 +37,13 @@ public sealed class ConcurrentMigrationTests(PostgresCluster cluster)
 
         var results = await Task.WhenAll(t1, t2);
 
-        results[0].Successful.Should().BeTrue(
-            because: results[0].Error?.Message ?? "first migrator failed");
-        results[1].Successful.Should().BeTrue(
-            because: results[1].Error?.Message ?? "second migrator failed");
+        Assert.True(results[0].Successful, results[0].Error?.Message ?? "first migrator failed");
+        Assert.True(results[1].Successful, results[1].Error?.Message ?? "second migrator failed");
 
         // Every script must have been applied exactly once. GetPendingMigrations returns
         // nothing when the journal is complete and consistent.
-        PostgresMigrator.GetPendingMigrations(connectionString, singleTenant: singleTenant)
-            .Should().BeEmpty(
-                because: "all migration scripts must have been applied exactly once across the two runs");
+        // all migration scripts must have been applied exactly once across the two runs
+        Assert.Empty(PostgresMigrator.GetPendingMigrations(connectionString, singleTenant: singleTenant));
 
         // The two runs together must have executed each script once. One run wins the lock
         // and runs all N scripts; the other acquires the lock afterward, finds all N scripts
@@ -55,9 +51,8 @@ public sealed class ConcurrentMigrationTests(PostgresCluster cluster)
         // sum to N — the same as the journal entry count.
         var journalCount = await CountJournalEntriesAsync(connectionString, cancellationToken);
         var totalExecuted = results[0].ExecutedScripts.Count + results[1].ExecutedScripts.Count;
-        ((long)totalExecuted).Should().Be(journalCount,
-            because: "between them the two runs execute every script exactly once — " +
-                     "no duplicates and no gaps");
+        // between them the two runs execute every script exactly once — no duplicates and no gaps
+        Assert.Equal(journalCount, ((long)totalExecuted));
     }
 
     // =========================================================================

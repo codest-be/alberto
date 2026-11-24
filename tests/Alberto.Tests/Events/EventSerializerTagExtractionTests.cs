@@ -1,4 +1,3 @@
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests;
@@ -73,8 +72,8 @@ public sealed class EventSerializerTagExtractionTests
         var evt = new NullableTagEvent(OrderId: null);
         var tags = Serializer.ExtractTags(evt);
 
-        tags.Should().NotContain(t => t.Concept == "order",
-            "a null-valued [Tag] property must not produce an EventTag");
+        // a null-valued [Tag] property must not produce an EventTag
+        Assert.DoesNotContain(tags, t => t.Concept == "order");
     }
 
     [Fact]
@@ -84,7 +83,7 @@ public sealed class EventSerializerTagExtractionTests
         var evt = new NullableTagEvent(OrderId: orderId);
         var tags = Serializer.ExtractTags(evt);
 
-        tags.Should().Contain(t => t.Concept == "order" && t.Id == orderId.ToString("D"));
+        Assert.Contains(tags, t => t.Concept == "order" && t.Id == orderId.ToString("D"));
     }
 
     // ── 2. Guid values are formatted with ToString("D") ─────────────────────
@@ -97,9 +96,9 @@ public sealed class EventSerializerTagExtractionTests
         var tags = Serializer.ExtractTags(evt);
 
         // "D" format: 00000000-0000-0000-0000-000000000000 (lower-case, hyphens)
-        tags.Should().Contain(t =>
-            t.Concept == "order" && t.Id == id.ToString("D"),
-            "Guid properties must be tagged with the 'D' format (dashes, lower-case)");
+        // Guid properties must be tagged with the 'D' format (dashes, lower-case)
+        Assert.Contains(tags, t =>
+            t.Concept == "order" && t.Id == id.ToString("D"));
     }
 
     // ── 3. Non-Guid values are formatted with ToString() ────────────────────
@@ -110,8 +109,8 @@ public sealed class EventSerializerTagExtractionTests
         var evt = new StringTagEvent(CustomerId: "cust-99");
         var tags = Serializer.ExtractTags(evt);
 
-        tags.Should().Contain(t => t.Concept == "customer" && t.Id == "cust-99",
-            "non-Guid string properties must be tagged using their raw ToString() value");
+        // non-Guid string properties must be tagged using their raw ToString() value
+        Assert.Contains(tags, t => t.Concept == "customer" && t.Id == "cust-99");
     }
 
     // ── 4. valueTransform callback receives (concept, rawValue) ─────────────
@@ -129,12 +128,12 @@ public sealed class EventSerializerTagExtractionTests
             return "transformed-" + raw;
         });
 
-        received.Should().Contain(("order", orderId.ToString("D")),
-            "the Guid rawValue passed to valueTransform must use the 'D' format");
-        received.Should().Contain(("customer", "cust-1"));
+        // the Guid rawValue passed to valueTransform must use the 'D' format
+        Assert.Contains(("order", orderId.ToString("D")), received);
+        Assert.Contains(("customer", "cust-1"), received);
 
-        tags.Should().Contain(t => t.Concept == "order" && t.Id == $"transformed-{orderId:D}");
-        tags.Should().Contain(t => t.Concept == "customer" && t.Id == "transformed-cust-1");
+        Assert.Contains(tags, t => t.Concept == "order" && t.Id == $"transformed-{orderId:D}");
+        Assert.Contains(tags, t => t.Concept == "customer" && t.Id == "transformed-cust-1");
     }
 
     // ── 5. _version:N tag is the LAST element ───────────────────────────────
@@ -145,8 +144,8 @@ public sealed class EventSerializerTagExtractionTests
         var evt = new GuidTagEvent(OrderId: Guid.NewGuid());
         var tags = Serializer.ExtractTags(evt).ToList();
 
-        tags.Last().Concept.Should().Be(EventTag.SchemaVersionConcept,
-            "the _version tag must be the last tag in the returned collection");
+        // the _version tag must be the last tag in the returned collection
+        Assert.Equal(EventTag.SchemaVersionConcept, tags.Last().Concept);
     }
 
     [Fact]
@@ -155,8 +154,8 @@ public sealed class EventSerializerTagExtractionTests
         var evt = new NoTagsEvent(Id: Guid.NewGuid(), Amount: 99m);
         var tags = Serializer.ExtractTags(evt).ToList();
 
-        tags.Last().Concept.Should().Be(EventTag.SchemaVersionConcept,
-            "even when there are no [Tag] properties the _version tag must be last");
+        // even when there are no [Tag] properties the _version tag must be last
+        Assert.Equal(EventTag.SchemaVersionConcept, tags.Last().Concept);
     }
 
     // ── 6. Type with no [Tag] properties yields exactly one tag ─────────────
@@ -167,10 +166,10 @@ public sealed class EventSerializerTagExtractionTests
         var evt = new NoTagsEvent(Id: Guid.NewGuid(), Amount: 42m);
         var tags = Serializer.ExtractTags(evt);
 
-        tags.Should().HaveCount(1,
-            "a type with zero [Tag] properties must produce exactly the one reserved _version tag");
-        tags.Single().Concept.Should().Be(EventTag.SchemaVersionConcept);
-        tags.Single().Id.Should().Be("1");
+        // a type with zero [Tag] properties must produce exactly the one reserved _version tag
+        Assert.Single(tags);
+        Assert.Equal(EventTag.SchemaVersionConcept, tags.Single().Concept);
+        Assert.Equal("1", tags.Single().Id);
     }
 
     // ── 7. Version defaults to 1 when [EventType] has no explicit Version ───
@@ -181,9 +180,9 @@ public sealed class EventSerializerTagExtractionTests
         var evt = new DefaultVersionEvent(OrderId: Guid.NewGuid());
         var tags = Serializer.ExtractTags(evt);
 
-        tags.Should().Contain(t =>
-            t.Concept == EventTag.SchemaVersionConcept && t.Id == "1",
-            "when [EventType] carries no explicit Version the stamp must be _version:1");
+        // when [EventType] carries no explicit Version the stamp must be _version:1
+        Assert.Contains(tags, t =>
+            t.Concept == EventTag.SchemaVersionConcept && t.Id == "1");
     }
 
     [Fact]
@@ -192,8 +191,8 @@ public sealed class EventSerializerTagExtractionTests
         var evt = new ExplicitVersionEvent(OrderId: Guid.NewGuid());
         var tags = Serializer.ExtractTags(evt);
 
-        tags.Should().Contain(t =>
-            t.Concept == EventTag.SchemaVersionConcept && t.Id == "3",
-            "when [EventType(Version = 3)] the stamp must be _version:3");
+        // when [EventType(Version = 3)] the stamp must be _version:3
+        Assert.Contains(tags, t =>
+            t.Concept == EventTag.SchemaVersionConcept && t.Id == "3");
     }
 }

@@ -4,7 +4,6 @@ using Alberto.InMemory;
 using Alberto.Checkpoints;
 using Alberto.Leases;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Subscriptions;
@@ -102,7 +101,8 @@ public sealed class CheckpointLeaseShutdownTests
 
         await group.StopAsync(cancellationToken);
 
-        inner.Data["p1"].Should().Be(42, "the final flush has to run while the fence token is still held");
+        // the final flush has to run while the fence token is still held
+        Assert.Equal(42, inner.Data["p1"]);
         await group.DisposeAsync();
     }
 
@@ -118,15 +118,17 @@ public sealed class CheckpointLeaseShutdownTests
 
             await group.StopProcessorAsync("p1");
 
-            group.GetFenceToken("p1").Should().Be(0);
-            group.GetFenceToken("p2").Should().Be(7, "siblings keep running");
+            Assert.Equal(0, group.GetFenceToken("p1"));
+            // siblings keep running
+            Assert.Equal(7, group.GetFenceToken("p2"));
 
             typeof(LeaseAwareControlLoopGroup)
                 .GetMethod("OnScanTimer", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .Invoke(group, [null]);
             await Task.Delay(200, cancellationToken);
 
-            group.GetFenceToken("p1").Should().Be(7, "a later scan re-acquires the processor");
+            // a later scan re-acquires the processor
+            Assert.Equal(7, group.GetFenceToken("p1"));
         }
         finally { await group.DisposeAsync(); }
     }
@@ -190,7 +192,8 @@ public sealed class CheckpointLeaseShutdownTests
         inner.Gate.SetResult();
         await Task.WhenAll(flush, rewind);
 
-        inner.Value.Should().Be(10, "the stale buffered 100 must not land after the rewind");
+        // the stale buffered 100 must not land after the rewind
+        Assert.Equal(10, inner.Value);
     }
 
     [Fact]
@@ -209,6 +212,7 @@ public sealed class CheckpointLeaseShutdownTests
         inner.Gate.SetResult();
         await Task.WhenAll(flush, reset);
 
-        inner.Value.Should().BeNull("the stale buffered 100 must not land after the reset");
+        // the stale buffered 100 must not land after the reset
+        Assert.Null(inner.Value);
     }
 }

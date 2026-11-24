@@ -1,7 +1,6 @@
 using Alberto.InMemory;
 using Alberto.Tenancy;
 using Alberto.Testing.Xunit;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests;
@@ -131,8 +130,7 @@ public class InMemoryTenantBackendTests
             [Event("order-placed", $"order:{TestId}")],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        result.Should().ContainSingle()
-            .Which.TenantId.Should().Be("acme");
+        Assert.Equal("acme", Assert.Single(result).TenantId);
     }
 
     [Fact]
@@ -145,8 +143,7 @@ public class InMemoryTenantBackendTests
             [Event("order-placed", $"order:{TestId}")],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        result.Should().ContainSingle()
-            .Which.TenantId.Should().BeNull();
+        Assert.Null(Assert.Single(result).TenantId);
     }
 
     // ── Tenant isolation: StreamForTenant filters to the given tenant ────────────────
@@ -167,8 +164,8 @@ public class InMemoryTenantBackendTests
             afterPosition: 0, limit: int.MaxValue,
             cancellationToken: TestContext.Current.CancellationToken);
 
-        acmeEvents.Should().HaveCount(2).And
-            .AllSatisfy(e => e.TenantId.Should().Be("acme"));
+        Assert.Equal(2, acmeEvents.Count());
+        Assert.All(acmeEvents, e => Assert.Equal("acme", e.TenantId));
     }
 
     [Fact]
@@ -183,7 +180,7 @@ public class InMemoryTenantBackendTests
             afterPosition: 0, limit: int.MaxValue,
             cancellationToken: TestContext.Current.CancellationToken);
 
-        result.Should().BeEmpty();
+        Assert.Empty(result);
     }
 
     // ── DCB conflict check is tenant-scoped ─────────────────────────────────────────
@@ -207,7 +204,7 @@ public class InMemoryTenantBackendTests
             expectedPosition: 0,
             cancellationToken: TestContext.Current.CancellationToken);
 
-        result.Should().ContainSingle();
+        Assert.Single(result);
     }
 
     [Fact]
@@ -232,7 +229,7 @@ public class InMemoryTenantBackendTests
             expectedPosition: seenPosition,
             cancellationToken: TestContext.Current.CancellationToken);
 
-        await act.Should().ThrowAsync<DcbConflictException>();
+        await Assert.ThrowsAnyAsync<DcbConflictException>(act);
     }
 
     // ── Decorator wiring: InMemoryTenantEventStoreDecorator round-trip ───────────────
@@ -248,8 +245,7 @@ public class InMemoryTenantBackendTests
             [Event("order-placed", $"d-order:{TestId}")],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        result.Should().ContainSingle()
-            .Which.TenantId.Should().Be("umbrella");
+        Assert.Equal("umbrella", Assert.Single(result).TenantId);
     }
 
     [Fact]
@@ -263,8 +259,8 @@ public class InMemoryTenantBackendTests
         var act = async () => await decorator.StreamAllAsync(
             cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*StreamAllAsync*");
+        var exception = await Assert.ThrowsAnyAsync<InvalidOperationException>(act);
+        Assert.Contains("StreamAllAsync", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -282,14 +278,14 @@ public class InMemoryTenantBackendTests
         };
 
         var act = async () => await _backend.AppendAsync([Event("order-placed", tag), invalid], cancellationToken: cancellationToken);
-        await act.Should().ThrowAsync<Exception>();
+        await Assert.ThrowsAnyAsync<Exception>(act);
 
-        (await _backend.GetLastPositionAsync(cancellationToken)).Should().Be(0);
-        (await _backend.StreamAllAsync(cancellationToken: cancellationToken).ToListAsync()).Should().BeEmpty();
-        (await _backend.StreamAsync(DcbQuery.ByTags(tag), cancellationToken: cancellationToken).ToListAsync()).Should().BeEmpty();
+        Assert.Equal(0, await _backend.GetLastPositionAsync(cancellationToken));
+        Assert.Empty((await _backend.StreamAllAsync(cancellationToken: cancellationToken).ToListAsync()));
+        Assert.Empty((await _backend.StreamAsync(DcbQuery.ByTags(tag), cancellationToken: cancellationToken).ToListAsync()));
 
         var appended = await _backend.AppendAsync([Event("order-placed", tag)], cancellationToken: cancellationToken);
-        appended.Should().ContainSingle().Which.GlobalPosition.Should().Be(1);
+        Assert.Equal(1, Assert.Single(appended).GlobalPosition);
     }
 
     private sealed class FakeTenantAccessor(string tenantId) : ITenantAccessor

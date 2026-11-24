@@ -2,7 +2,6 @@ using System.Collections.Immutable;
 using Alberto.Configuration;
 using Alberto.InMemory;
 using Alberto.Postgres;
-using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 
@@ -60,7 +59,7 @@ public class ShardValidationTests
     [Fact]
     public void A_well_formed_sharded_module_produces_no_failures()
     {
-        Codes(Sharded()).Should().BeEmpty();
+        Assert.Empty(Codes(Sharded()));
     }
 
     [Fact]
@@ -69,13 +68,13 @@ public class ShardValidationTests
         // The default path must stay exactly as it was — no catalog, no shards, no complaints.
         var definition = Sharded(new TenancyDefinition());
 
-        Codes(definition).Should().BeEmpty();
+        Assert.Empty(Codes(definition));
     }
 
     [Fact]
     public void Shards_without_tenancy_fail_with_ALB0010()
     {
-        Codes(Sharded(tenancyEnabled: false)).Should().Contain("ALB0010");
+        Assert.Contains("ALB0010", Codes(Sharded(tenancyEnabled: false)));
     }
 
     [Fact]
@@ -84,7 +83,7 @@ public class ShardValidationTests
         // InMemoryBackendDescriptor now declares SupportsTenancy=true (fix:inmemory-fidelity),
         // so it no longer triggers this validation path. NoTenancyBackend explicitly returns
         // false to keep the validator path exercised.
-        Codes(Sharded(backend: new NoTenancyBackend())).Should().Contain("ALB0011");
+        Assert.Contains("ALB0011", Codes(Sharded(backend: new NoTenancyBackend())));
     }
 
     [Fact]
@@ -97,7 +96,7 @@ public class ShardValidationTests
             Catalog = Postgres(Catalog),
         });
 
-        Codes(definition).Should().Contain("ALB0012");
+        Assert.Contains("ALB0012", Codes(definition));
     }
 
     [Fact]
@@ -113,7 +112,7 @@ public class ShardValidationTests
             Catalog = Postgres(Catalog),
         });
 
-        Codes(definition).Should().Contain("ALB0012");
+        Assert.Contains("ALB0012", Codes(definition));
     }
 
     [Fact]
@@ -126,7 +125,7 @@ public class ShardValidationTests
             DefaultShardId = "db9",
         });
 
-        Codes(definition).Should().Contain("ALB0013");
+        Assert.Contains("ALB0013", Codes(definition));
     }
 
     [Fact]
@@ -139,7 +138,7 @@ public class ShardValidationTests
             DefaultShardId = "db1",
         });
 
-        Codes(definition).Should().BeEmpty();
+        Assert.Empty(Codes(definition));
     }
 
     [Fact]
@@ -150,7 +149,7 @@ public class ShardValidationTests
             Shards = [new ShardDeclaration("db1", Postgres(Db1))],
         });
 
-        Codes(definition).Should().Contain("ALB0014");
+        Assert.Contains("ALB0014", Codes(definition));
     }
 
     [Fact]
@@ -163,11 +162,10 @@ public class ShardValidationTests
             Tenancy = Sharded().Tenancy with { UndeclaredConfiguredShards = ["db3"] },
         };
 
-        var failure = new AlbertoModuleValidator().Collect(definition)
-            .Should().ContainSingle(f => f.Code == "ALB0015").Subject;
+        var failure = Assert.Single(new AlbertoModuleValidator().Collect(definition), f => f.Code == "ALB0015");
 
-        failure.Problem.Should().Contain("db3");
-        failure.Remedy.Should().Contain("AddShard(\"db3\"");
+        Assert.Contains("db3", failure.Problem);
+        Assert.Contains("AddShard(\"db3\"", failure.Remedy);
     }
 
     [Fact]
@@ -185,7 +183,7 @@ public class ShardValidationTests
             Catalog = Postgres(Catalog),
         });
 
-        Codes(definition).Should().Contain("ALB0016");
+        Assert.Contains("ALB0016", Codes(definition));
     }
 
     [Fact]
@@ -201,7 +199,7 @@ public class ShardValidationTests
             Catalog = Postgres(Catalog),
         });
 
-        Codes(definition).Should().NotContain("ALB0016");
+        Assert.DoesNotContain("ALB0016", Codes(definition));
     }
 
     [Fact]
@@ -218,8 +216,7 @@ public class ShardValidationTests
             Catalog = Postgres(Catalog),
         });
 
-        new AlbertoModuleValidator().Collect(definition)
-            .Should().Contain(f => f.Problem.StartsWith("Shard 'db2':", StringComparison.Ordinal));
+        Assert.Contains(new AlbertoModuleValidator().Collect(definition), f => f.Problem.StartsWith("Shard 'db2':", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -239,7 +236,9 @@ public class ShardValidationTests
             },
             tenancyEnabled: false);
 
-        Codes(definition).Should().Contain(["ALB0010", "ALB0012", "ALB0013", "ALB0014", "ALB0016"]);
+        var codes = Codes(definition);
+        Assert.All(new[] { "ALB0010", "ALB0012", "ALB0013", "ALB0014", "ALB0016" },
+            code => Assert.Contains(code, codes));
     }
 
     [Fact]
@@ -259,7 +258,7 @@ public class ShardValidationTests
             DefaultShardId = "db9",
         });
 
-        Codes(definition).Should().ContainSingle().Which.Should().Be("ALB0013");
+        Assert.Equal("ALB0013", Assert.Single(Codes(definition)));
     }
 
     [Fact]
@@ -272,6 +271,6 @@ public class ShardValidationTests
             UndeclaredConfiguredShards = ImmutableArray.Create("db1"),
         });
 
-        Codes(definition).Should().ContainSingle().Which.Should().Be("ALB0015");
+        Assert.Equal("ALB0015", Assert.Single(Codes(definition)));
     }
 }

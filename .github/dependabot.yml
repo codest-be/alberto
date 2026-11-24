@@ -56,7 +56,6 @@ updates:
           - xunit*
           - Microsoft.NET.Test.Sdk
           - coverlet*
-          - FluentAssertions
           - Testcontainers*
         update-types: [minor, patch]
       xunit-major:

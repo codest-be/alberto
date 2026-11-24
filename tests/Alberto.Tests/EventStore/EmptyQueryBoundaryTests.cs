@@ -1,5 +1,4 @@
 using Alberto.InMemory;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests;
@@ -33,7 +32,7 @@ public class EmptyQueryBoundaryTests
     public async Task AppendAsync_EmptyByTypes_WithExpectedPosition_Throws()
     {
         var emptyQuery = DcbQuery.ByTypes(Array.Empty<EventType>());
-        emptyQuery.IsEmpty.Should().BeTrue("ByTypes with an empty array must be IsEmpty");
+        Assert.True(emptyQuery.IsEmpty, "ByTypes with an empty array must be IsEmpty");
 
         var act = () => FreshStore().AppendAsync(
             [AnyEvent()],
@@ -41,8 +40,8 @@ public class EmptyQueryBoundaryTests
             expectedPosition: 0,
             cancellationToken: TestContext.Current.CancellationToken);
 
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithParameterName("dcbQuery");
+        var exception = await Assert.ThrowsAnyAsync<ArgumentException>(act);
+        Assert.Equal("dcbQuery", exception.ParamName);
     }
 
     // ── Reject: empty ByTags as a consistency check ──────────────────────────────────
@@ -51,7 +50,7 @@ public class EmptyQueryBoundaryTests
     public async Task AppendAsync_EmptyByTags_WithExpectedPosition_Throws()
     {
         var emptyQuery = DcbQuery.ByTags(Array.Empty<EventTag>());
-        emptyQuery.IsEmpty.Should().BeTrue("ByTags with an empty array must be IsEmpty");
+        Assert.True(emptyQuery.IsEmpty, "ByTags with an empty array must be IsEmpty");
 
         var act = () => FreshStore().AppendAsync(
             [AnyEvent()],
@@ -59,8 +58,8 @@ public class EmptyQueryBoundaryTests
             expectedPosition: 0,
             cancellationToken: TestContext.Current.CancellationToken);
 
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithParameterName("dcbQuery");
+        var exception = await Assert.ThrowsAnyAsync<ArgumentException>(act);
+        Assert.Equal("dcbQuery", exception.ParamName);
     }
 
     // ── Reject: empty ByAllTags as a consistency check ───────────────────────────────
@@ -69,7 +68,7 @@ public class EmptyQueryBoundaryTests
     public async Task AppendAsync_EmptyByAllTags_WithExpectedPosition_Throws()
     {
         var emptyQuery = DcbQuery.ByAllTags(Array.Empty<EventTag>());
-        emptyQuery.IsEmpty.Should().BeTrue("ByAllTags with an empty array must be IsEmpty");
+        Assert.True(emptyQuery.IsEmpty, "ByAllTags with an empty array must be IsEmpty");
 
         var act = () => FreshStore().AppendAsync(
             [AnyEvent()],
@@ -77,8 +76,8 @@ public class EmptyQueryBoundaryTests
             expectedPosition: 0,
             cancellationToken: TestContext.Current.CancellationToken);
 
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithParameterName("dcbQuery");
+        var exception = await Assert.ThrowsAnyAsync<ArgumentException>(act);
+        Assert.Equal("dcbQuery", exception.ParamName);
     }
 
     // ── Reject: null query with expectedPosition ──────────────────────────────────────
@@ -92,8 +91,8 @@ public class EmptyQueryBoundaryTests
             expectedPosition: 0,
             cancellationToken: TestContext.Current.CancellationToken);
 
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithParameterName("dcbQuery");
+        var exception = await Assert.ThrowsAnyAsync<ArgumentException>(act);
+        Assert.Equal("dcbQuery", exception.ParamName);
     }
 
     // ── Allow: non-empty query with expectedPosition detects real conflict ────────────
@@ -130,8 +129,8 @@ public class EmptyQueryBoundaryTests
             expectedPosition: 0,
             cancellationToken: TestContext.Current.CancellationToken);
 
-        await act.Should().ThrowAsync<DcbConflictException>(
-            "a non-empty query must still detect the conflict introduced by the first append");
+        // a non-empty query must still detect the conflict introduced by the first append
+        await Assert.ThrowsAnyAsync<DcbConflictException>(act);
     }
 
     // ── Allow: unconditional append with an empty query (no expectedPosition) ─────────
@@ -149,7 +148,8 @@ public class EmptyQueryBoundaryTests
             expectedPosition: null,
             cancellationToken: TestContext.Current.CancellationToken);
 
-        result.Should().ContainSingle("the unconditional append must write the event");
+        // the unconditional append must write the event
+        Assert.Single(result);
     }
 
     // ── DcbQuery.All: intent is distinguishable from accidental emptiness ─────────────
@@ -157,24 +157,18 @@ public class EmptyQueryBoundaryTests
     [Fact]
     public void All_IsStructurallyEmptyButFlaggedAsDeliberate()
     {
-        DcbQuery.All.IsEmpty.Should().BeTrue(
-            "All names no types and no tags, so it is structurally identical to an accidental empty");
-        DcbQuery.All.MatchesAll.Should().BeTrue(
-            "All is the one query whose emptiness was asked for by name");
+        Assert.True(DcbQuery.All.IsEmpty, "All names no types and no tags, so it is structurally identical to an accidental empty");
+        Assert.True(DcbQuery.All.MatchesAll, "All is the one query whose emptiness was asked for by name");
 
-        DcbQuery.Empty.MatchesAll.Should().BeFalse(
-            "Empty is the seed for the fluent builders, so an unnarrowed chain must read as a mistake");
-        DcbQuery.ByTypes(Array.Empty<EventType>()).MatchesAll.Should().BeFalse(
-            "a filter list that came back empty at runtime was never a deliberate whole-log query");
+        Assert.False(DcbQuery.Empty.MatchesAll, "Empty is the seed for the fluent builders, so an unnarrowed chain must read as a mistake");
+        Assert.False(DcbQuery.ByTypes(Array.Empty<EventType>()).MatchesAll, "a filter list that came back empty at runtime was never a deliberate whole-log query");
     }
 
     [Fact]
     public void All_NarrowedByAnyAxis_IsAnOrdinaryQuery()
     {
-        DcbQuery.All.WithTypes("order-placed").MatchesAll.Should().BeFalse(
-            "adding a type makes it a real boundary, not a whole-log query");
-        DcbQuery.All.WithTags(new EventTag("order", "1")).MatchesAll.Should().BeFalse(
-            "adding a tag makes it a real boundary, not a whole-log query");
+        Assert.False(DcbQuery.All.WithTypes("order-placed").MatchesAll, "adding a type makes it a real boundary, not a whole-log query");
+        Assert.False(DcbQuery.All.WithTags(new EventTag("order", "1")).MatchesAll, "adding a tag makes it a real boundary, not a whole-log query");
     }
 
     // ── Reject: DcbQuery.All as a consistency check, for a different reason ───────────
@@ -190,8 +184,9 @@ public class EmptyQueryBoundaryTests
 
         // All is a coherent request the store declines, so the message must explain the design
         // consequence rather than accuse the caller of a bug.
-        (await act.Should().ThrowAsync<ArgumentException>().WithParameterName("dcbQuery"))
-            .Which.Message.Should().Contain("serialises every writer");
+        var exception = await Assert.ThrowsAnyAsync<ArgumentException>(act);
+        Assert.Equal("dcbQuery", exception.ParamName);
+        Assert.Contains("serialises every writer", exception.Message);
     }
 
     [Fact]
@@ -206,9 +201,10 @@ public class EmptyQueryBoundaryTests
         // The two rejections must not collapse into one message: an empty filter list is a bug at
         // the call site, and pointing the caller at the whole-log design instead would send them
         // looking in the wrong place.
-        var message = (await act.Should().ThrowAsync<ArgumentException>()).Which.Message;
-        message.Should().Contain("came back empty at runtime");
-        message.Should().NotContain("serialises every writer");
+        var exception = await Assert.ThrowsAnyAsync<ArgumentException>(act);
+        var message = exception.Message;
+        Assert.Contains("came back empty at runtime", message);
+        Assert.DoesNotContain("serialises every writer", message);
     }
 
     // ── Allow: DcbQuery.All still reads the whole log ────────────────────────────────
@@ -224,6 +220,7 @@ public class EmptyQueryBoundaryTests
             DcbQuery.All,
             cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
-        events.Should().HaveCount(2, "All remains a valid way to read the entire log");
+        // All remains a valid way to read the entire log
+        Assert.Equal(2, events.Count());
     }
 }

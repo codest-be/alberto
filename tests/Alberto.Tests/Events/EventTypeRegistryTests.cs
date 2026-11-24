@@ -5,7 +5,6 @@ using Alberto.Configuration;
 using Alberto.InMemory;
 using Alberto.Tests.SampleEvents;
 using Alberto.Upcasting;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -54,9 +53,9 @@ public class EventTypeRegistryTests
         var scanned = Scanned().Descriptors.OrderBy(d => d.Id, StringComparer.Ordinal).ToList();
         var hand = HandBuilt().Descriptors.OrderBy(d => d.Id, StringComparer.Ordinal).ToList();
 
-        hand.Select(Facts).Should().Equal(scanned.Select(Facts),
-            "a hand-written registry must be a drop-in for the scan: same ids, versions, " +
-            "opt-outs, CLR types and JSON contract types");
+        // a hand-written registry must be a drop-in for the scan: same ids, versions, opt-outs, CLR types
+        // and JSON contract types
+        Assert.Equal(scanned.Select(Facts), hand.Select(Facts));
     }
 
     [Fact]
@@ -67,11 +66,11 @@ public class EventTypeRegistryTests
 
         foreach (var sample in Samples)
         {
-            hand.ExtractTags(sample).Should().Equal(scanned.ExtractTags(sample),
-                $"tags decide which boundary {sample.GetType().Name} falls into");
-            hand.Serialize(sample).Should().Be(scanned.Serialize(sample));
-            hand.GetEventType(sample).Should().Be(scanned.GetEventType(sample));
-            hand.GetEventType(sample).Version.Should().Be(scanned.GetEventType(sample).Version);
+            // tags decide which boundary {sample.GetType().Name} falls into
+            Assert.Equal(scanned.ExtractTags(sample), hand.ExtractTags(sample));
+            Assert.Equal(scanned.Serialize(sample), hand.Serialize(sample));
+            Assert.Equal(scanned.GetEventType(sample), hand.GetEventType(sample));
+            Assert.Equal(scanned.GetEventType(sample).Version, hand.GetEventType(sample).Version);
         }
     }
 
@@ -84,8 +83,8 @@ public class EventTypeRegistryTests
         foreach (var sample in Samples)
         {
             var envelope = Stored(scanned.GetEventType(sample), scanned.Serialize(sample));
-            hand.Deserialize(envelope).Should().Be(scanned.Deserialize(envelope));
-            hand.Deserialize(envelope).Should().Be(sample);
+            Assert.Equal(scanned.Deserialize(envelope), hand.Deserialize(envelope));
+            Assert.Equal(sample, hand.Deserialize(envelope));
         }
     }
 
@@ -104,7 +103,7 @@ public class EventTypeRegistryTests
             new EventType("e2e-versioned-order", 1),
             JsonSerializer.Serialize(new { OrderId = orderId, Amount = 3m })));
 
-        read.Should().Be(new VersionedOrder(orderId, 3m, "unknown"));
+        Assert.Equal(new VersionedOrder(orderId, 3m, "unknown"), read);
     }
 
     [Fact]
@@ -114,7 +113,8 @@ public class EventTypeRegistryTests
 
         var act = () => serializer.Serialize(new UnregisteredEvent("x"));
 
-        act.Should().Throw<InvalidOperationException>().WithMessage($"*{nameof(UnregisteredEvent)}*not registered*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        Assert.Matches($"(?is){nameof(UnregisteredEvent)}.*not registered", exception.Message);
     }
 
     [Fact]
@@ -124,7 +124,8 @@ public class EventTypeRegistryTests
 
         var act = () => serializer.Deserialize(Stored(new EventType("nope"), "{}"));
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*No registered type for event 'nope'*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        Assert.Contains("No registered type for event 'nope'", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -134,8 +135,8 @@ public class EventTypeRegistryTests
         // written an unregistered type by runtime type, and CurioStack relies on nothing changing.
         var serializer = EventSerializer.FromAssembly(typeof(VersionedOrder).Assembly);
 
-        serializer.Serialize(new UnregisteredEvent("x")).Should().Contain("\"Name\":\"x\"");
-        serializer.ExtractTags(new UnregisteredEvent("x")).Should().Contain(new EventTag("thing", "x"));
+        Assert.Contains("\"Name\":\"x\"", serializer.Serialize(new UnregisteredEvent("x")));
+        Assert.Contains(new EventTag("thing", "x"), serializer.ExtractTags(new UnregisteredEvent("x")));
     }
 
     [Fact]
@@ -146,7 +147,8 @@ public class EventTypeRegistryTests
             .Add("e2e-plain-note", SampleEventsJsonContext.Default.VersionedOrder)
             .Build();
 
-        act.Should().Throw<ArgumentException>().WithMessage("*'e2e-plain-note'*unique*");
+        var exception = Assert.ThrowsAny<ArgumentException>(act);
+        Assert.Matches("(?is)'e2e-plain-note'.*unique", exception.Message);
     }
 
     [Fact]
@@ -157,7 +159,8 @@ public class EventTypeRegistryTests
             .Add("another-note", SampleEventsJsonContext.Default.PlainNote)
             .Build();
 
-        act.Should().Throw<ArgumentException>().WithMessage("*exactly one event type id*");
+        var exception = Assert.ThrowsAny<ArgumentException>(act);
+        Assert.Contains("exactly one event type id", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -166,13 +169,14 @@ public class EventTypeRegistryTests
         var context = new UnregisteredJsonContext();
 
         var withoutId = () => EventTypeRegistry.CreateBuilder().Add(context.UnregisteredEvent);
-        withoutId.Should().Throw<InvalidOperationException>().WithMessage("*does not have an [EventType] attribute*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(withoutId);
+        Assert.Contains("does not have an [EventType] attribute", exception.Message, StringComparison.OrdinalIgnoreCase);
 
         var withId = EventTypeRegistry.CreateBuilder()
             .Add("unregistered", context.UnregisteredEvent, version: 3, upcastingNotRequired: true)
             .Build();
-        withId.TryGetById("unregistered", out var d).Should().BeTrue();
-        (d!.Version, d.UpcastingNotRequired, d.ClrType).Should().Be((3, true, typeof(UnregisteredEvent)));
+        Assert.True(withId.TryGetById("unregistered", out var d));
+        Assert.Equal((3, true, typeof(UnregisteredEvent)), (d!.Version, d.UpcastingNotRequired, d.ClrType));
     }
 
     [Fact]
@@ -181,7 +185,8 @@ public class EventTypeRegistryTests
         var act = () => new EventTypeDescriptor(
             "not-an-event", 1, false, SampleEventsJsonContext.Default.VersionedOrderV1, _ => []);
 
-        act.Should().Throw<ArgumentException>().WithMessage($"*{nameof(VersionedOrderV1)}*{nameof(IEvent)}*");
+        var exception = Assert.ThrowsAny<ArgumentException>(act);
+        Assert.Matches($"(?is){nameof(VersionedOrderV1)}.*{nameof(IEvent)}", exception.Message);
     }
 
     [Fact]
@@ -198,16 +203,15 @@ public class EventTypeRegistryTests
 
         // Startup validation reads the registry's descriptors: the upcaster covers Version = 2.
         var validate = () => sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(ModuleKey);
-        validate.Should().NotThrow();
+        validate();
 
         var serializer = sp.GetRequiredKeyedService<EventSerializer>(ModuleKey);
         var orderId = Guid.NewGuid();
-        serializer.Deserialize(Stored(
+        Assert.Equal(new VersionedOrder(orderId, 1m, "unknown"), serializer.Deserialize(Stored(
                 new EventType("e2e-versioned-order", 1),
-                JsonSerializer.Serialize(new { OrderId = orderId, Amount = 1m })))
-            .Should().Be(new VersionedOrder(orderId, 1m, "unknown"));
+                JsonSerializer.Serialize(new { OrderId = orderId, Amount = 1m }))));
 
-        sp.GetRequiredKeyedService<AlbertoStore>(ModuleKey).Should().NotBeNull();
+        Assert.NotNull(sp.GetRequiredKeyedService<AlbertoStore>(ModuleKey));
     }
 
     [Fact]
@@ -219,8 +223,8 @@ public class EventTypeRegistryTests
 
         var act = () => sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(ModuleKey);
 
-        act.Should().Throw<OptionsValidationException>()
-            .Which.Failures.Should().ContainMatch("*ALB0018*");
+        var exception = Assert.ThrowsAny<OptionsValidationException>(act);
+        Assert.Contains(exception.Failures, message => message.Contains("ALB0018", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -235,8 +239,8 @@ public class EventTypeRegistryTests
         var viaFallback = EventEnvelopeExtensions.DeserializeEvent<PlainNote>(envelope, serializer: null);
         var viaSerializer = EventSerializer.FromRegistry(HandBuilt()).Deserialize(envelope);
 
-        viaFallback.Should().Be(new PlainNote(noteId, "lower"));
-        viaFallback.Should().Be(viaSerializer);
+        Assert.Equal(new PlainNote(noteId, "lower"), viaFallback);
+        Assert.Equal(viaSerializer, viaFallback);
     }
 
     private static (string, int, bool, Type, Type) Facts(EventTypeDescriptor d) =>

@@ -1,7 +1,6 @@
 using Alberto.Configuration;
 using Alberto.Postgres;
 using Alberto.Tenancy;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -37,8 +36,7 @@ public class UnshardedRegistrationParityTests
         using var provider = SingleTenant();
         using var scope = provider.CreateScope();
 
-        scope.ServiceProvider.GetRequiredKeyedService<IEventStore>("orders")
-            .Should().NotBeOfType<ShardRoutingEventStore>();
+        Assert.IsNotType<ShardRoutingEventStore>(scope.ServiceProvider.GetRequiredKeyedService<IEventStore>("orders"));
     }
 
     [Fact]
@@ -49,8 +47,7 @@ public class UnshardedRegistrationParityTests
         using var provider = RowLevelMultiTenant();
         using var scope = provider.CreateScope();
 
-        scope.ServiceProvider.GetRequiredKeyedService<IEventStore>("orders")
-            .Should().NotBeOfType<ShardRoutingEventStore>();
+        Assert.IsNotType<ShardRoutingEventStore>(scope.ServiceProvider.GetRequiredKeyedService<IEventStore>("orders"));
     }
 
     [Fact]
@@ -58,9 +55,9 @@ public class UnshardedRegistrationParityTests
     {
         using var provider = RowLevelMultiTenant();
 
-        provider.GetKeyedService<ITenantShardMap>("orders").Should().BeNull();
-        provider.GetKeyedService<TenantShardResolver>("orders").Should().BeNull();
-        provider.GetKeyedService<ShardHealth>("orders").Should().BeNull();
+        Assert.Null(provider.GetKeyedService<ITenantShardMap>("orders"));
+        Assert.Null(provider.GetKeyedService<TenantShardResolver>("orders"));
+        Assert.Null(provider.GetKeyedService<ShardHealth>("orders"));
     }
 
     [Fact]
@@ -70,12 +67,12 @@ public class UnshardedRegistrationParityTests
 
         var definition = provider.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get("orders");
 
-        definition.ShardId.Should().BeNull();
-        definition.ServiceKey.Should().Be("orders");
-        definition.DisplayName.Should().Be("orders");
-        definition.Tenancy.IsSharded.Should().BeFalse();
-        definition.Tenancy.Shards.Should().BeEmpty();
-        definition.Tenancy.Catalog.Should().BeNull();
+        Assert.Null(definition.ShardId);
+        Assert.Equal("orders", definition.ServiceKey);
+        Assert.Equal("orders", definition.DisplayName);
+        Assert.False(definition.Tenancy.IsSharded);
+        Assert.Empty(definition.Tenancy.Shards);
+        Assert.Null(definition.Tenancy.Catalog);
     }
 
     [Fact]
@@ -90,12 +87,12 @@ public class UnshardedRegistrationParityTests
         using var provider = services.BuildServiceProvider();
         var monitor = provider.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>();
 
-        monitor.Get("orders").ModuleKey.Should().Be("orders");
+        Assert.Equal("orders", monitor.Get("orders").ModuleKey);
 
         // Nothing configured a shard-keyed instance, so what comes back is an empty definition
         // that fails its own validation rather than a copy of the module's.
         var shardInstance = () => monitor.Get("orders#db1");
-        shardInstance.Should().Throw<OptionsValidationException>();
+        Assert.ThrowsAny<OptionsValidationException>(shardInstance);
     }
 
     [Fact]
@@ -103,7 +100,7 @@ public class UnshardedRegistrationParityTests
     {
         using var unsharded = RowLevelMultiTenant();
 
-        unsharded.GetRequiredService<IOptions<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckServiceOptions>>()
-            .Value.Registrations.Should().NotContain(r => r.Name.StartsWith("alberto-shards", StringComparison.Ordinal));
+        Assert.DoesNotContain(unsharded.GetRequiredService<IOptions<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckServiceOptions>>()
+            .Value.Registrations, r => r.Name.StartsWith("alberto-shards", StringComparison.Ordinal));
     }
 }

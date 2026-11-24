@@ -1,7 +1,6 @@
 using Alberto.Postgres;
 using Alberto.Tenancy;
 using Alberto.Tests.Infrastructure;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
@@ -55,9 +54,9 @@ public sealed class ShardDegradationTests(PostgresCluster cluster)
         using var host = await StartHostAsync(db1, catalog);
 
         var health = host.Services.GetRequiredKeyedService<ShardHealth>(ModuleKey);
-        health.Unhealthy.Should().Equal("db2");
-        health.Get("db2").LastError.Should().NotBeNullOrEmpty();
-        health.Get("db1").Healthy.Should().BeTrue();
+        Assert.Equal(["db2"], health.Unhealthy);
+        Assert.False(string.IsNullOrEmpty(health.Get("db2").LastError));
+        Assert.True(health.Get("db1").Healthy);
 
         // The tenants of the healthy database are unaffected.
         var map = host.Services.GetRequiredKeyedService<ITenantShardMap>(ModuleKey);
@@ -76,7 +75,7 @@ public sealed class ShardDegradationTests(PostgresCluster cluster)
             }],
             cancellationToken: cancellationToken);
 
-        appended.Should().ContainSingle();
+        Assert.Single(appended);
 
         await host.StopAsync(cancellationToken);
     }
@@ -93,10 +92,10 @@ public sealed class ShardDegradationTests(PostgresCluster cluster)
         var report = await host.Services.GetRequiredService<HealthCheckService>()
             .CheckHealthAsync(r => r.Name == $"alberto-shards-{ModuleKey}", cancellationToken);
 
-        var entry = report.Entries.Should().ContainSingle().Subject.Value;
-        entry.Status.Should().Be(HealthStatus.Degraded);
-        entry.Data["db1"].Should().Be("healthy");
-        entry.Data["db2"].Should().NotBe("healthy");
+        var entry = Assert.Single(report.Entries).Value;
+        Assert.Equal(HealthStatus.Degraded, entry.Status);
+        Assert.Equal("healthy", entry.Data["db1"]);
+        Assert.NotEqual("healthy", entry.Data["db2"]);
 
         await host.StopAsync(cancellationToken);
     }

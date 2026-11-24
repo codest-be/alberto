@@ -1,6 +1,5 @@
 using Alberto.Postgres;
 using Alberto.Tests.Infrastructure;
-using FluentAssertions;
 using Npgsql;
 using Xunit;
 
@@ -37,13 +36,13 @@ public sealed class StoreImprintTests(PostgresCluster cluster)
 
         var flip = () => PostgresMigrator.Migrate(connectionString, singleTenant: !createdSingleTenant);
 
-        flip.Should().Throw<AlbertoStoreMismatchException>(
-                because: "the two migration sets share a journal, so running the wrong one leaves the " +
-                         "store in a state neither set describes")
-            .Which.Message.Should().Contain("ALB0021");
+        // the two migration sets share a journal, so running the wrong one leaves the store in a state
+        // neither set describes
+        var exception = Assert.ThrowsAny<AlbertoStoreMismatchException>(flip);
+        Assert.Contains("ALB0021", exception.Message);
 
-        (await CountJournalEntriesAsync(connectionString)).Should().Be(journalledBefore,
-            because: "the gate runs ahead of the first script, so a refused flip must leave the store untouched");
+        // the gate runs ahead of the first script, so a refused flip must leave the store untouched
+        Assert.Equal(journalledBefore, await CountJournalEntriesAsync(connectionString));
     }
 
     [Fact]
@@ -54,16 +53,17 @@ public sealed class StoreImprintTests(PostgresCluster cluster)
 
         var flip = () => PostgresMigrator.Migrate(connectionString, singleTenant: false);
 
-        var message = flip.Should().Throw<AlbertoStoreMismatchException>().Which.Message;
+        var exception = Assert.ThrowsAny<AlbertoStoreMismatchException>(flip);
+        var message = exception.Message;
 
-        message.Should().Contain("created single-tenant",
-            because: "an operator has to be told what the store already is");
-        message.Should().Contain("declares .WithTenancy()",
-            because: "and which half of the disagreement is theirs to change");
-        message.Should().Contain($"Recorded in {StoreImprintTableName}",
-            because: "the imprint, not the sniff, is what spoke here");
-        message.Should().Contain("No migration scripts were run.",
-            because: "the operator needs to know the store is unchanged before deciding what to do");
+        // an operator has to be told what the store already is
+        Assert.Contains("created single-tenant", message);
+        // and which half of the disagreement is theirs to change
+        Assert.Contains("declares .WithTenancy()", message);
+        // the imprint, not the sniff, is what spoke here
+        Assert.Contains($"Recorded in {StoreImprintTableName}", message);
+        // the operator needs to know the store is unchanged before deciding what to do
+        Assert.Contains("No migration scripts were run.", message);
     }
 
     [Fact]
@@ -74,9 +74,9 @@ public sealed class StoreImprintTests(PostgresCluster cluster)
 
         var inspect = () => PostgresMigrator.GetPendingMigrations(connectionString, singleTenant: false);
 
-        inspect.Should().Throw<AlbertoStoreMismatchException>(
-            because: "listing every script of a set the store can never accept would report a " +
-                     "mismatched store as merely behind");
+        // listing every script of a set the store can never accept would report a mismatched store as
+        // merely behind
+        Assert.ThrowsAny<AlbertoStoreMismatchException>(inspect);
     }
 
     // =========================================================================
@@ -92,11 +92,11 @@ public sealed class StoreImprintTests(PostgresCluster cluster)
 
         var flip = () => PostgresMigrator.Migrate(connectionString, singleTenant: false);
 
-        flip.Should().Throw<AlbertoStoreMismatchException>(
-                because: "every store that existed before the imprint has none, and so does one left " +
-                         "behind by a migration that failed partway")
-            .Which.Message.Should().Contain("Inferred from alberto_events",
-                because: "the attribution has to say which source disagreed with the declaration");
+        // every store that existed before the imprint has none, and so does one left behind by a
+        // migration that failed partway
+        var exception = Assert.ThrowsAny<AlbertoStoreMismatchException>(flip);
+        // the attribution has to say which source disagreed with the declaration
+        Assert.Contains("Inferred from alberto_events", exception.Message);
     }
 
     [Fact]
@@ -108,8 +108,8 @@ public sealed class StoreImprintTests(PostgresCluster cluster)
 
         Migrated(connectionString, singleTenant: true);
 
-        (await ReadTenancyImprintAsync(connectionString)).Should().Be("single",
-            because: "a rolling upgrade must record what the store already is without an operator step");
+        // a rolling upgrade must record what the store already is without an operator step
+        Assert.Equal("single", await ReadTenancyImprintAsync(connectionString));
     }
 
     // =========================================================================
@@ -125,8 +125,7 @@ public sealed class StoreImprintTests(PostgresCluster cluster)
 
         Migrated(connectionString, singleTenant);
 
-        (await ReadTenancyImprintAsync(connectionString))
-            .Should().Be(singleTenant ? "single" : "multi");
+        Assert.Equal(singleTenant ? "single" : "multi", await ReadTenancyImprintAsync(connectionString));
     }
 
     [Fact]
@@ -137,9 +136,9 @@ public sealed class StoreImprintTests(PostgresCluster cluster)
         var validate = () => PostgresMigrator.ValidateTenancyMode(
             connectionString, schema: null, singleTenant: false);
 
-        validate.Should().NotThrow(
-            because: "a database with no events table is fresh rather than mismatched; before the gate " +
-                     "moved ahead of the migration this same call threw for multi-tenant");
+        // a database with no events table is fresh rather than mismatched; before the gate moved ahead of
+        // the migration this same call threw for multi-tenant
+        validate();
     }
 
     [Fact]
@@ -150,8 +149,8 @@ public sealed class StoreImprintTests(PostgresCluster cluster)
         Migrated(connectionString, singleTenant: true);
         Migrated(connectionString, singleTenant: true);
 
-        (await CountImprintRowsAsync(connectionString)).Should().Be(1,
-            because: "the imprint is written ON CONFLICT DO NOTHING, so a restart never rewrites it");
+        // the imprint is written ON CONFLICT DO NOTHING, so a restart never rewrites it
+        Assert.Equal(1, await CountImprintRowsAsync(connectionString));
     }
 
     // =========================================================================
@@ -164,7 +163,7 @@ public sealed class StoreImprintTests(PostgresCluster cluster)
     private static void Migrated(string connectionString, bool singleTenant)
     {
         var result = PostgresMigrator.Migrate(connectionString, singleTenant: singleTenant);
-        result.Successful.Should().BeTrue(because: result.Error?.Message ?? "migration failed");
+        Assert.True(result.Successful, result.Error?.Message ?? "migration failed");
     }
 
     private static async Task DropImprintAsync(string connectionString) =>

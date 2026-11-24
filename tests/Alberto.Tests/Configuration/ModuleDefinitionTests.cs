@@ -1,7 +1,6 @@
 using Alberto;
 using Alberto.Configuration;
 using Alberto.Tests.Testing;
-using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -22,7 +21,7 @@ public class ModuleDefinitionTests
         var services = new ServiceCollection();
         services.AddAlberto("orders", module => module.UseBackend(new FakeBackend()));
 
-        Resolve(services, "orders").ModuleKey.Should().Be("orders");
+        Assert.Equal("orders", Resolve(services, "orders").ModuleKey);
     }
 
     [Fact]
@@ -37,8 +36,8 @@ public class ModuleDefinitionTests
         var provider = services.BuildServiceProvider();
         var monitor = provider.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>();
 
-        monitor.Get("orders").ControlLoop.BatchSize.Should().Be(100);
-        monitor.Get("billing").ControlLoop.BatchSize.Should().Be(5);
+        Assert.Equal(100, monitor.Get("orders").ControlLoop.BatchSize);
+        Assert.Equal(5, monitor.Get("billing").ControlLoop.BatchSize);
     }
 
     [Fact]
@@ -51,9 +50,8 @@ public class ModuleDefinitionTests
             .UseBackend(backend)
             .WithTenancy());
 
-        backend.Registered.Should().BeTrue();
-        backend.TenancyAtRegistration.Should().BeTrue(
-            "deferred registration must see the final definition regardless of call order");
+        Assert.True(backend.Registered);
+        Assert.True(backend.TenancyAtRegistration, "deferred registration must see the final definition regardless of call order");
     }
 
     [Fact]
@@ -65,8 +63,7 @@ public class ModuleDefinitionTests
         var tenancyLast = new ServiceCollection();
         tenancyLast.AddAlberto("orders", m => m.UseBackend(new FakeBackend()).WithTenancy());
 
-        Resolve(tenancyFirst, "orders").TenancyEnabled
-            .Should().Be(Resolve(tenancyLast, "orders").TenancyEnabled);
+        Assert.Equal(Resolve(tenancyLast, "orders").TenancyEnabled, Resolve(tenancyFirst, "orders").TenancyEnabled);
     }
 
     [Fact]
@@ -85,7 +82,7 @@ public class ModuleDefinitionTests
             .UseBackend(new FakeBackend())
             .Configure(d => d with { ControlLoop = d.ControlLoop with { BatchSize = 500 } }));
 
-        Resolve(services, "orders").ControlLoop.BatchSize.Should().Be(17);
+        Assert.Equal(17, Resolve(services, "orders").ControlLoop.BatchSize);
     }
 
     [Fact]
@@ -100,8 +97,7 @@ public class ModuleDefinitionTests
                 Kind = ProcessorKind.Projection,
             }));
 
-        Resolve(services, "orders").Processors.Should().ContainSingle()
-            .Which.ProcessorId.Should().Be("summary");
+        Assert.Equal("summary", Assert.Single(Resolve(services, "orders").Processors).ProcessorId);
     }
 
     [Fact]
@@ -122,8 +118,8 @@ public class ModuleDefinitionTests
             .WithTenancy()
             .UseBackend(new FakeBackend()));
 
-        seenModuleKey.Should().Be("orders");
-        seenTenancyEnabled.Should().BeTrue("the callback sees the definition after all builder calls complete");
+        Assert.Equal("orders", seenModuleKey);
+        Assert.True(seenTenancyEnabled, "the callback sees the definition after all builder calls complete");
     }
 
     [Fact]
@@ -135,8 +131,8 @@ public class ModuleDefinitionTests
             .UseBackend(new FakeBackend())
             .UseBackend(new FakeBackend()));
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*already declares*Fake*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        Assert.Matches("(?is)already declares.*Fake", exception.Message);
     }
 
     // ── Call-order invariant ─────────────────────────────────────────────────
@@ -158,9 +154,9 @@ public class ModuleDefinitionTests
         var resolvedBefore = Resolve(before, "orders");
         var resolvedAfter = Resolve(after, "orders");
 
-        resolvedBefore.TenancyEnabled.Should().BeTrue();
-        resolvedAfter.TenancyEnabled.Should().BeTrue("call order must not affect whether tenancy is applied");
-        resolvedBefore.TenancyEnabled.Should().Be(resolvedAfter.TenancyEnabled);
+        Assert.True(resolvedBefore.TenancyEnabled);
+        Assert.True(resolvedAfter.TenancyEnabled, "call order must not affect whether tenancy is applied");
+        Assert.Equal(resolvedAfter.TenancyEnabled, resolvedBefore.TenancyEnabled);
     }
 
     [Fact]
@@ -176,7 +172,7 @@ public class ModuleDefinitionTests
         // Building and resolving the definition must not throw.
         var act = () => Resolve(services, "orders");
 
-        act.Should().NotThrow();
-        Resolve(services, "orders").TenancyEnabled.Should().BeTrue();
+        act();
+        Assert.True(Resolve(services, "orders").TenancyEnabled);
     }
 }

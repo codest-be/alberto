@@ -1,5 +1,4 @@
 using Alberto.Configuration;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Configuration;
@@ -34,32 +33,31 @@ public class ProcessorIdTests
     [Fact]
     public void An_unattributed_type_derives_its_own_name()
     {
-        ProcessorId.For<OrderSummaryHandler>().Should().Be("OrderSummaryHandler");
+        Assert.Equal("OrderSummaryHandler", ProcessorId.For<OrderSummaryHandler>());
     }
 
     [Fact]
     public void The_attribute_wins_over_the_derived_name()
     {
-        ProcessorId.For<RenamedHandler>().Should().Be("orders.legacy-summary");
+        Assert.Equal("orders.legacy-summary", ProcessorId.For<RenamedHandler>());
     }
 
     [Fact]
     public void A_nested_type_is_qualified_by_its_declaring_type()
     {
-        ProcessorId.For<Outer.Inner>().Should().Be("Outer.Inner");
+        Assert.Equal("Outer.Inner", ProcessorId.For<Outer.Inner>());
     }
 
     [Fact]
     public void A_generic_type_includes_its_argument()
     {
-        ProcessorId.For<GenericHandler<OrderSummaryHandler>>()
-            .Should().Be("GenericHandler_OrderSummaryHandler");
+        Assert.Equal("GenericHandler_OrderSummaryHandler", ProcessorId.For<GenericHandler<OrderSummaryHandler>>());
     }
 
     [Fact]
     public void Derivation_is_stable_across_calls()
     {
-        ProcessorId.For<OrderSummaryHandler>().Should().Be(ProcessorId.For<OrderSummaryHandler>());
+        Assert.Equal(ProcessorId.For<OrderSummaryHandler>(), ProcessorId.For<OrderSummaryHandler>());
     }
 
     [Fact]
@@ -67,8 +65,8 @@ public class ProcessorIdTests
     {
         var act = () => ProcessorId.For<BlankIdHandler>();
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*BlankIdHandler*ProcessorId*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        Assert.Matches("(?is)BlankIdHandler.*ProcessorId", exception.Message);
     }
 
     [Fact]
@@ -76,7 +74,7 @@ public class ProcessorIdTests
     {
         var act = () => ProcessorId.For(null!);
 
-        act.Should().Throw<ArgumentNullException>();
+        Assert.ThrowsAny<ArgumentNullException>(act);
     }
 
     [Fact]
@@ -85,8 +83,8 @@ public class ProcessorIdTests
         var ordersId = ProcessorId.For<Orders.SummaryHandler>();
         var invoicesId = ProcessorId.For<Invoices.SummaryHandler>();
 
-        ordersId.Should().Be("Orders.SummaryHandler");
-        invoicesId.Should().Be("Invoices.SummaryHandler");
-        ordersId.Should().NotBe(invoicesId);
+        Assert.Equal("Orders.SummaryHandler", ordersId);
+        Assert.Equal("Invoices.SummaryHandler", invoicesId);
+        Assert.NotEqual(invoicesId, ordersId);
     }
 }

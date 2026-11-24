@@ -1,6 +1,5 @@
 using Alberto.Postgres;
 using Alberto.Tests.Infrastructure;
-using FluentAssertions;
 using Npgsql;
 using Xunit;
 
@@ -64,13 +63,16 @@ public sealed class AppendBatchOrderingTests(SingleTenantPostgresFixture fixture
         var backend = CreateBackend();
         var results = await backend.AppendAsync(events, cancellationToken: cancellationToken);
 
-        results.Should().HaveCount(20, because: "one result row per input event is required");
+        // one result row per input event is required
+        Assert.Equal(20, results.Count());
 
         var positions = results.Select(e => e.GlobalPosition).ToList();
-        positions.Should().BeInAscendingOrder(because: "positions must be strictly ascending in input order");
+        // positions must be strictly ascending in input order
+        Assert.Equal(positions.Order(), positions);
 
         var distinct = positions.Distinct().ToList();
-        distinct.Should().HaveCount(20, because: "every event must get a unique position");
+        // every event must get a unique position
+        Assert.Equal(20, distinct.Count());
     }
 
     // ── Hazard 3: pg_notify semantics ────────────────────────────────────────
@@ -125,11 +127,11 @@ public sealed class AppendBatchOrderingTests(SingleTenantPostgresFixture fixture
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
         await listenConn.WaitAsync(timeoutCts.Token);
 
-        receivedPayloads.Should().HaveCount(1,
-            because: "exactly one pg_notify must be emitted per append call, not one per event");
+        // exactly one pg_notify must be emitted per append call, not one per event
+        Assert.Single(receivedPayloads);
 
-        receivedPayloads[0].Should().Be(lastPosition.ToString(),
-            because: "the notify payload must be the last position written in the batch");
+        // the notify payload must be the last position written in the batch
+        Assert.Equal(lastPosition.ToString(), receivedPayloads[0]);
     }
 
     // ── Hazard 4: empty-input contract ───────────────────────────────────────
@@ -160,7 +162,8 @@ public sealed class AppendBatchOrderingTests(SingleTenantPostgresFixture fixture
         var backend = CreateBackend();
         var results = await backend.AppendAsync([], cancellationToken: cancellationToken);
 
-        results.Should().BeEmpty(because: "appending zero events must return zero result rows");
+        // appending zero events must return zero result rows
+        Assert.Empty(results);
 
         // Give the server a brief window to deliver any spurious notifications.
         using var shortTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -174,8 +177,8 @@ public sealed class AppendBatchOrderingTests(SingleTenantPostgresFixture fixture
             // Expected: no notification arrives, timeout fires.
         }
 
-        receivedPayloads.Should().BeEmpty(
-            because: "appending zero events must not emit any pg_notify");
+        // appending zero events must not emit any pg_notify
+        Assert.Empty(receivedPayloads);
     }
 
     // ── Hazard 5: column defaults ─────────────────────────────────────────────
@@ -210,17 +213,17 @@ public sealed class AppendBatchOrderingTests(SingleTenantPostgresFixture fixture
         var backend = CreateBackend();
         var results = await backend.AppendAsync([minimal], cancellationToken: cancellationToken);
 
-        results.Should().HaveCount(1);
+        Assert.Single(results);
         var stored = results.Single();
 
-        stored.Id.Should().Be(eventId,
-            because: "a supplied event_id must be preserved verbatim");
+        // a supplied event_id must be preserved verbatim
+        Assert.Equal(eventId, stored.Id);
 
-        stored.EventData.Should().Be("{}",
-            because: "empty event data must round-trip as an empty JSON object");
+        // empty event data must round-trip as an empty JSON object
+        Assert.Equal("{}", stored.EventData);
 
-        stored.Tags.Should().BeEmpty(
-            because: "an empty tag list must round-trip as an empty array");
+        // an empty tag list must round-trip as an empty array
+        Assert.Empty(stored.Tags);
 
         // Now verify that omitting the ID produces a generated UUID (not null / empty).
         var noId = new EventToPersist
@@ -232,9 +235,9 @@ public sealed class AppendBatchOrderingTests(SingleTenantPostgresFixture fixture
         };
 
         var results2 = await backend.AppendAsync([noId], cancellationToken: cancellationToken);
-        results2.Should().HaveCount(1);
-        results2.Single().Id.Should().NotBe(Guid.Empty,
-            because: "a missing event_id must be replaced by gen_random_uuid(), not stored as null/empty");
+        Assert.Single(results2);
+        // a missing event_id must be replaced by gen_random_uuid(), not stored as null/empty
+        Assert.NotEqual(Guid.Empty, results2.Single().Id);
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────

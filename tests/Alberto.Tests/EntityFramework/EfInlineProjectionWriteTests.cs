@@ -1,6 +1,5 @@
 using Alberto.EntityFramework.Inline;
 using Alberto.Projections;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -37,9 +36,9 @@ public sealed class EfInlineProjectionWriteTests(EfProjectionTestFixture fixture
         await projection.ProcessAsync(events, AppendTransaction.None, TestContext.Current.CancellationToken);
 
         var entity = await fixture.ReadEntityAsync(entityId);
-        entity.Should().NotBeNull();
-        entity!.Counter.Should().Be(7);
-        entity.LastProcessedPosition.Should().Be(1);
+        Assert.NotNull(entity);
+        Assert.Equal(7, entity!.Counter);
+        Assert.Equal(1, entity.LastProcessedPosition);
     }
 
     // -----------------------------------------------------------------------
@@ -63,11 +62,11 @@ public sealed class EfInlineProjectionWriteTests(EfProjectionTestFixture fixture
 
         var act = async () => await projection.ProcessAsync(events, AppendTransaction.None, TestContext.Current.CancellationToken);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("not a concurrency error");
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(act);
+        Assert.Equal("not a concurrency error", thrown.Message);
 
         var entity = await fixture.ReadEntityAsync(entityId);
-        entity.Should().BeNull("a single failed save is final: nothing is retried behind the append's back");
+        Assert.Null(entity);
     }
 
     // -----------------------------------------------------------------------
@@ -92,7 +91,7 @@ public sealed class EfInlineProjectionWriteTests(EfProjectionTestFixture fixture
         await projection.ProcessAsync([evt], AppendTransaction.None, TestContext.Current.CancellationToken);
 
         var entity = await fixture.ReadEntityAsync(entityId);
-        entity!.Counter.Should().Be(10, "the event should have been applied exactly once");
+        Assert.Equal(10, entity!.Counter);
     }
 
     // -----------------------------------------------------------------------
@@ -114,7 +113,7 @@ public sealed class EfInlineProjectionWriteTests(EfProjectionTestFixture fixture
         // Empty batch: no events handled by this projection.
         var act = async () => await projection.ProcessAsync([], AppendTransaction.None, TestContext.Current.CancellationToken);
 
-        await act.Should().NotThrowAsync();
+        await act();
     }
 
     // -----------------------------------------------------------------------
@@ -143,10 +142,10 @@ public sealed class EfInlineProjectionWriteTests(EfProjectionTestFixture fixture
         var entity1 = await fixture.ReadEntityAsync(id1);
         var entity2 = await fixture.ReadEntityAsync(id2);
 
-        entity1.Should().NotBeNull();
-        entity1!.Counter.Should().Be(5, "4 + 1 = 5 after folding both events for id1");
+        Assert.NotNull(entity1);
+        Assert.Equal(5, entity1!.Counter);
 
-        entity2.Should().NotBeNull();
-        entity2!.Counter.Should().Be(9);
+        Assert.NotNull(entity2);
+        Assert.Equal(9, entity2!.Counter);
     }
 }

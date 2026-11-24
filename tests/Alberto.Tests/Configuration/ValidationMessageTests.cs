@@ -1,5 +1,4 @@
 using Alberto.Configuration;
-using FluentAssertions;
 using Xunit;
 using Alberto.Results;
 
@@ -15,9 +14,8 @@ public class ValidationMessageTests
             "No event store backend is configured.",
             "Add .WithPostgres(...) or .WithInMemory() inside AddAlberto(\"orders\", ...).");
 
-        failure.Format().Should().Be(
-            "[ALB0001] No event store backend is configured." + Environment.NewLine +
-            "          → Add .WithPostgres(...) or .WithInMemory() inside AddAlberto(\"orders\", ...).");
+        Assert.Equal("[ALB0001] No event store backend is configured." + Environment.NewLine +
+            "          → Add .WithPostgres(...) or .WithInMemory() inside AddAlberto(\"orders\", ...).", failure.Format());
     }
 
     [Fact]
@@ -29,10 +27,10 @@ public class ValidationMessageTests
             new AlbertoValidationFailure("ALB0002", "Second problem.", "Second remedy."),
         ]);
 
-        report.Should().StartWith("Alberto module 'orders' cannot start: 2 configuration problems.");
-        report.Should().Contain("[ALB0001] First problem.");
-        report.Should().Contain("[ALB0002] Second problem.");
-        report.Should().Contain("→ Second remedy.");
+        Assert.StartsWith("Alberto module 'orders' cannot start: 2 configuration problems.", report);
+        Assert.Contains("[ALB0001] First problem.", report);
+        Assert.Contains("[ALB0002] Second problem.", report);
+        Assert.Contains("→ Second remedy.", report);
     }
 
     [Fact]
@@ -41,7 +39,7 @@ public class ValidationMessageTests
         var report = AlbertoValidationReport.Describe("orders",
             [new AlbertoValidationFailure("ALB0001", "Only problem.", "Only remedy.")]);
 
-        report.Should().StartWith("Alberto module 'orders' cannot start: 1 configuration problem.");
+        Assert.StartsWith("Alberto module 'orders' cannot start: 1 configuration problem.", report);
     }
 
     [Fact]
@@ -50,7 +48,6 @@ public class ValidationMessageTests
         var report = AlbertoValidationReport.Describe("orders",
             [new AlbertoValidationFailure("ALB0001", "Problem.", "Remedy.")]);
 
-        report.Should().EndWith(
-            "Settings can also be supplied under 'Alberto:Modules:orders' in configuration.");
+        Assert.EndsWith("Settings can also be supplied under 'Alberto:Modules:orders' in configuration.", report);
     }
 }

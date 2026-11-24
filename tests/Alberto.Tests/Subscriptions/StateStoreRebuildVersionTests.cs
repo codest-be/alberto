@@ -3,7 +3,6 @@ using Alberto.Postgres;
 using Alberto.Projections;
 using Alberto.Tests.EntityFramework;
 using Alberto.Tests.Infrastructure;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Xunit;
@@ -70,9 +69,10 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
                 ["doc-2"] = new("doc-2", 98),
             }, [], cancellationToken: cancellationToken);
 
-        (await live.ListRecentAsync(50, cancellationToken)).Should().HaveCount(
-            1, "a reader must not see the half-finished rebuild alongside the live rows");
-        (await shadow.ListRecentAsync(50, cancellationToken)).Should().HaveCount(2);
+        // a reader must not see the half-finished rebuild alongside the live rows
+        Assert.Single((await live.ListRecentAsync(50, cancellationToken)));
+        var shadowRows = await shadow.ListRecentAsync(50, cancellationToken);
+        Assert.Equal(2, shadowRows.Count);
     }
 
     // ---------------------------------------------------------------------- EF
@@ -103,9 +103,9 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
         await EfStore(ProjectionVersion.From(() => 3)).ApplyChangesAsync(
             new Dictionary<string, CounterEntity> { [docId] = Entity(docId, 42) }, [], cancellationToken: cancellationToken);
 
-        (await EfStore(ProjectionVersion.From(() => 3)).LoadManyAsync([docId], cancellationToken: cancellationToken))[docId]
-            .RebuildVersion.Should().Be(3);
-        (await EfStore(ProjectionVersion.From(() => 1)).LoadManyAsync([docId], cancellationToken: cancellationToken)).Should().BeEmpty();
+        Assert.Equal(3, (await EfStore(ProjectionVersion.From(() => 3)).LoadManyAsync([docId], cancellationToken: cancellationToken))[docId]
+            .RebuildVersion);
+        Assert.Empty((await EfStore(ProjectionVersion.From(() => 1)).LoadManyAsync([docId], cancellationToken: cancellationToken)));
     }
 
     [Fact]
@@ -125,13 +125,13 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
 
         await clearer.ClearVersionAsync(2, cancellationToken);
 
-        (await EfStore(ProjectionVersion.From(() => 1)).LoadManyAsync([docId], cancellationToken: cancellationToken)).Should().ContainKey(
-            docId, "clearing the abandoned rebuild must leave the live projection standing");
-        (await EfStore(ProjectionVersion.From(() => 2)).LoadManyAsync([docId], cancellationToken: cancellationToken)).Should().BeEmpty();
+        // clearing the abandoned rebuild must leave the live projection standing
+        Assert.Contains(docId, await EfStore(ProjectionVersion.From(() => 1)).LoadManyAsync([docId], cancellationToken: cancellationToken));
+        Assert.Empty((await EfStore(ProjectionVersion.From(() => 2)).LoadManyAsync([docId], cancellationToken: cancellationToken)));
 
         // Re-running is a no-op, which is what makes it safe after a coordinator crash.
         await clearer.ClearVersionAsync(2, cancellationToken);
-        (await EfStore(ProjectionVersion.From(() => 1)).LoadManyAsync([docId], cancellationToken: cancellationToken)).Should().ContainKey(docId);
+        Assert.Contains(docId, await EfStore(ProjectionVersion.From(() => 1)).LoadManyAsync([docId], cancellationToken: cancellationToken));
     }
 
     [Fact]
@@ -175,11 +175,11 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
             cancellationToken);
 
         var state = await EfStore(ProjectionVersion.From(() => 1)).LoadManyAsync([updatedId, deletedId], cancellationToken);
-        state[updatedId].Counter.Should().Be(99);
-        state.Should().NotContainKey(deletedId, "deletes are part of every atomic retry attempt");
-        versionResolutionCount.Should().Be(
-            1,
-            "one ApplyChanges operation cannot cross rebuild versions between attempts");
+        Assert.Equal(99, state[updatedId].Counter);
+        // deletes are part of every atomic retry attempt
+        Assert.DoesNotContain(deletedId, state);
+        // one ApplyChanges operation cannot cross rebuild versions between attempts
+        Assert.Equal(1, versionResolutionCount);
     }
 
     [Fact]
@@ -197,7 +197,7 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
             [],
             cancellationToken);
 
-        (await store.LoadManyAsync([docId], cancellationToken))[docId].Counter.Should().Be(42);
+        Assert.Equal(42, (await store.LoadManyAsync([docId], cancellationToken))[docId].Counter);
     }
 
     [Fact]
@@ -219,9 +219,9 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
             [],
             cancellationToken);
 
-        var thrown = await act.Should().ThrowAsync<ConcurrencyConflictException>();
-        thrown.Which.DocumentId.Should().Be(docId);
-        thrown.Which.InnerException.Should().BeSameAs(permanentConflict);
-        (await EfStore(ProjectionVersion.From(() => 1)).LoadManyAsync([docId], cancellationToken)).Should().BeEmpty();
+        var thrown = await Assert.ThrowsAnyAsync<ConcurrencyConflictException>(act);
+        Assert.Equal(docId, thrown.DocumentId);
+        Assert.Same(permanentConflict, thrown.InnerException);
+        Assert.Empty((await EfStore(ProjectionVersion.From(() => 1)).LoadManyAsync([docId], cancellationToken)));
     }
 }

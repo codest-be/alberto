@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Alberto.InMemory;
 using Alberto.Projections;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
@@ -65,8 +64,8 @@ public sealed class ProjectionCatchUpEndToEndTests
             await catchUp.WaitForProjectionAsync(ProcessorId, cancellationToken: cancellationToken);
 
             var states = await occupancy.LoadManyAsync([showId], cancellationToken);
-            states[showId].SeatsTaken.Should().Be(2,
-                because: "the wait returns only once the loop has consumed everything appended before it");
+            // the wait returns only once the loop has consumed everything appended before it
+            Assert.Equal(2, states[showId].SeatsTaken);
         }
         finally
         {

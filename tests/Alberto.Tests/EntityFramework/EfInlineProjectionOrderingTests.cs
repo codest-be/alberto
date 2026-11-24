@@ -3,7 +3,6 @@ using Alberto.EntityFramework.Inline;
 using Alberto.Postgres;
 using Alberto.Projections;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.EntityFramework;
@@ -32,8 +31,9 @@ public sealed class EfInlineProjectionOrderingTests(EfEventStoreFixture fixture)
         await Task.WhenAll(appendA, appendB);
 
         var row = await fixture.ReadEntityAsync(entityId);
-        row.Should().NotBeNull();
-        row!.Counter.Should().Be(11, "both events must reach the row whichever append projects first");
+        Assert.NotNull(row);
+        // both events must reach the row whichever append projects first
+        Assert.Equal(11, row!.Counter);
     }
 
     [Fact]
@@ -54,7 +54,7 @@ public sealed class EfInlineProjectionOrderingTests(EfEventStoreFixture fixture)
         await Task.WhenAll(appendA, appendB);
 
         var row = await fixture.ReadEntityAsync(entityId);
-        row!.Counter.Should().Be(11);
+        Assert.Equal(11, row!.Counter);
     }
 
     [Fact]
@@ -70,7 +70,7 @@ public sealed class EfInlineProjectionOrderingTests(EfEventStoreFixture fixture)
         await store.AppendAsync([Increment(entityId, 1)], cancellationToken: cancellationToken)
             .WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
 
-        (await fixture.ReadEntityAsync(entityId))!.Counter.Should().Be(11);
+        Assert.Equal(11, (await fixture.ReadEntityAsync(entityId))!.Counter);
     }
 
     [Fact]
@@ -86,11 +86,11 @@ public sealed class EfInlineProjectionOrderingTests(EfEventStoreFixture fixture)
 
         var conflict = async () => await store.AppendAsync(
             [Tagged(2)], DcbQuery.ByTags(tag.Value), 0, cancellationToken);
-        await conflict.Should().ThrowAsync<DcbConflictException>();
+        await Assert.ThrowsAnyAsync<DcbConflictException>(conflict);
 
         await store.AppendAsync([Tagged(3)], cancellationToken: cancellationToken)
             .WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
-        (await fixture.ReadEntityAsync(entityId))!.Counter.Should().Be(4);
+        Assert.Equal(4, (await fixture.ReadEntityAsync(entityId))!.Counter);
     }
 
     [Fact]
@@ -105,7 +105,7 @@ public sealed class EfInlineProjectionOrderingTests(EfEventStoreFixture fixture)
         await store.AppendAsync([Increment(entityId, 1)], cancellationToken: cancellationToken)
             .WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
 
-        (await fixture.ReadEntityAsync(entityId))!.Counter.Should().Be(1);
+        Assert.Equal(1, (await fixture.ReadEntityAsync(entityId))!.Counter);
     }
 
     [Fact]
@@ -122,13 +122,15 @@ public sealed class EfInlineProjectionOrderingTests(EfEventStoreFixture fixture)
 
         var act = async () => await store.AppendAsync([Increment(entityId, 1)], cancellationToken: cancellationToken);
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("projection failed");
+        var exception = await Assert.ThrowsAnyAsync<InvalidOperationException>(act);
+        Assert.Equal("projection failed", exception.Message, ignoreCase: true);
         var after = await store.ReadAsync(DcbQuery.ByTypes("counter-incremented"), 0, 100_000, cancellationToken);
-        after.Count.Should().Be(before.Count);
-        (await fixture.ReadEntityAsync(entityId)).Should().BeNull();
+        Assert.Equal(before.Count, after.Count);
+        Assert.Null(await fixture.ReadEntityAsync(entityId));
         await store.AppendAsync([Increment(entityId, 2)], cancellationToken: cancellationToken)
             .WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
-        (await fixture.ReadEntityAsync(entityId))!.Counter.Should().Be(2, "the failed append released the append lock");
+        // the failed append released the append lock
+        Assert.Equal(2, (await fixture.ReadEntityAsync(entityId))!.Counter);
     }
 
     [Fact]
@@ -144,7 +146,8 @@ public sealed class EfInlineProjectionOrderingTests(EfEventStoreFixture fixture)
         var act = async () => await store.AppendAsync(
             [Increment(Guid.NewGuid().ToString(), 1)], cancellationToken: cancellationToken);
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not in the event store's database*");
+        var exception = await Assert.ThrowsAnyAsync<InvalidOperationException>(act);
+        Assert.Contains("not in the event store's database", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -159,7 +162,8 @@ public sealed class EfInlineProjectionOrderingTests(EfEventStoreFixture fixture)
         var act = async () => await store.AppendAsync(
             [Increment(Guid.NewGuid().ToString(), 1)], cancellationToken: cancellationToken);
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*EnableRetryOnFailure*");
+        var exception = await Assert.ThrowsAnyAsync<InvalidOperationException>(act);
+        Assert.Contains("EnableRetryOnFailure", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     private DeclaredEfInlineProjection<CounterEntity, EfTestDbContext> NewProjection(string processorId) =>

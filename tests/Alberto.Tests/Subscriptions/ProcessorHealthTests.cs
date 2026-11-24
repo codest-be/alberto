@@ -1,7 +1,6 @@
 using Alberto.Configuration;
 using Alberto.InMemory;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -24,8 +23,8 @@ public class ProcessorHealthTests
     {
         var state = new ProcessorHealthState();
 
-        state.Get("orders-proj").HasReported.Should().BeFalse();
-        state.ProcessorIds.Should().BeEmpty();
+        Assert.False(state.Get("orders-proj").HasReported);
+        Assert.Empty(state.ProcessorIds);
     }
 
     [Fact]
@@ -35,7 +34,7 @@ public class ProcessorHealthTests
         // normal, not an outage.
         var result = await Check(new ProcessorHealthState(), new FakeTimeProvider());
 
-        result.Status.Should().Be(HealthStatus.Healthy);
+        Assert.Equal(HealthStatus.Healthy, result.Status);
     }
 
     [Fact]
@@ -47,9 +46,10 @@ public class ProcessorHealthTests
 
         var result = await Check(state, time);
 
-        result.Status.Should().Be(HealthStatus.Unhealthy);
-        result.Description.Should().Contain("orders-proj").And.Contain("faulted");
-        result.Data["orders-proj"].Should().Be("faulted");
+        Assert.Equal(HealthStatus.Unhealthy, result.Status);
+        Assert.Contains("orders-proj", result.Description);
+        Assert.Contains("faulted", result.Description);
+        Assert.Equal("faulted", result.Data["orders-proj"]);
     }
 
     [Fact]
@@ -64,8 +64,8 @@ public class ProcessorHealthTests
         time.Advance(Staleness + TimeSpan.FromSeconds(1));
         var result = await Check(state, time);
 
-        result.Status.Should().Be(HealthStatus.Unhealthy);
-        result.Description.Should().Contain("wedge");
+        Assert.Equal(HealthStatus.Unhealthy, result.Status);
+        Assert.Contains("wedge", result.Description);
     }
 
     [Fact]
@@ -78,8 +78,8 @@ public class ProcessorHealthTests
         time.Advance(Staleness); // exactly at the threshold, not past it
         var result = await Check(state, time);
 
-        result.Status.Should().Be(HealthStatus.Healthy);
-        result.Data["orders-proj"].Should().Be("healthy");
+        Assert.Equal(HealthStatus.Healthy, result.Status);
+        Assert.Equal("healthy", result.Data["orders-proj"]);
     }
 
     [Fact]
@@ -91,8 +91,8 @@ public class ProcessorHealthTests
 
         var result = await Check(state, time, degradedLagThreshold: 100);
 
-        result.Status.Should().Be(HealthStatus.Degraded);
-        result.Description.Should().Contain("101");
+        Assert.Equal(HealthStatus.Degraded, result.Status);
+        Assert.Contains("101", result.Description);
     }
 
     [Fact]
@@ -105,9 +105,9 @@ public class ProcessorHealthTests
 
         var result = await Check(state, time, degradedLagThreshold: 100);
 
-        result.Status.Should().Be(HealthStatus.Unhealthy);
-        result.Data["faulted-one"].Should().Be("faulted");
-        result.Data["lagging-one"].Should().Be("lagging (500)");
+        Assert.Equal(HealthStatus.Unhealthy, result.Status);
+        Assert.Equal("faulted", result.Data["faulted-one"]);
+        Assert.Equal("lagging (500)", result.Data["lagging-one"]);
     }
 
     [Fact]
@@ -131,8 +131,8 @@ public class ProcessorHealthTests
         await head.StopAsync(CancellationToken.None);
 
         var snapshot = state.Get("counting");
-        snapshot.IsFaulted.Should().BeFalse();
-        snapshot.LastHeartbeatAt.Should().BeAfter(DateTimeOffset.MinValue);
+        Assert.False(snapshot.IsFaulted);
+        Assert.True(snapshot.LastHeartbeatAt > DateTimeOffset.MinValue);
     }
 
     [Fact]
@@ -155,7 +155,7 @@ public class ProcessorHealthTests
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
 
-        state.Get("throwing").IsFaulted.Should().BeTrue();
+        Assert.True(state.Get("throwing").IsFaulted);
     }
 
     [Fact]
@@ -165,20 +165,20 @@ public class ProcessorHealthTests
         services.AddAlberto("orders", module => module.WithInMemory());
         await using var sp = services.BuildServiceProvider();
 
-        sp.GetKeyedService<ProcessorHealthState>("orders").Should().NotBeNull();
+        Assert.NotNull(sp.GetKeyedService<ProcessorHealthState>("orders"));
 
-        var registration = sp.GetRequiredService<IOptions<HealthCheckServiceOptions>>()
-            .Value.Registrations.Should()
-            .ContainSingle(r => r.Name == "alberto-processors-orders").Subject;
+        var registration = Assert.Single(sp.GetRequiredService<IOptions<HealthCheckServiceOptions>>()
+            .Value.Registrations, r => r.Name == "alberto-processors-orders");
 
-        registration.Tags.Should().Contain("alberto").And.Contain("processors");
+        Assert.Contains("alberto", registration.Tags);
+        Assert.Contains("processors", registration.Tags);
 
         // The factory must resolve, and an idle module with no reporting loops is healthy.
         var check = registration.Factory(sp);
         var result = await check.CheckHealthAsync(
             new HealthCheckContext { Registration = registration },
             TestContext.Current.CancellationToken);
-        result.Status.Should().Be(HealthStatus.Healthy);
+        Assert.Equal(HealthStatus.Healthy, result.Status);
     }
 
     private static Task<HealthCheckResult> Check(

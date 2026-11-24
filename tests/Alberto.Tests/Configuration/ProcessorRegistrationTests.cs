@@ -3,7 +3,6 @@ using Alberto.Configuration;
 using Alberto.InMemory;
 using Alberto.Projections;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -53,8 +52,7 @@ public class ProcessorRegistrationTests
     {
         var services = Module(m => m.ReactTo<ShipmentDispatched, ShipmentNotifier>(h => h.HandleAsync));
 
-        Resolve(services).Processors.Should().ContainSingle()
-            .Which.ProcessorId.Should().Be("ShipmentNotifier");
+        Assert.Equal("ShipmentNotifier", Assert.Single(Resolve(services).Processors).ProcessorId);
     }
 
     [Fact]
@@ -62,8 +60,7 @@ public class ProcessorRegistrationTests
     {
         var services = Module(m => m.ReactTo<ShipmentDispatched, RenamedShipmentNotifier>(h => h.HandleAsync));
 
-        Resolve(services).Processors.Should().ContainSingle()
-            .Which.ProcessorId.Should().Be("shipments.legacy");
+        Assert.Equal("shipments.legacy", Assert.Single(Resolve(services).Processors).ProcessorId);
     }
 
     [Fact]
@@ -72,8 +69,7 @@ public class ProcessorRegistrationTests
         var services = Module(m => m.ReactTo<ShipmentDispatched, ShipmentNotifier>(
             h => h.HandleAsync, processorId: "explicit"));
 
-        Resolve(services).Processors.Should().ContainSingle()
-            .Which.ProcessorId.Should().Be("explicit");
+        Assert.Equal("explicit", Assert.Single(Resolve(services).Processors).ProcessorId);
     }
 
     [Fact]
@@ -81,7 +77,7 @@ public class ProcessorRegistrationTests
     {
         var services = Module(m => m.ReactTo<ShipmentDispatched, ShipmentNotifier>(h => h.HandleAsync));
 
-        Resolve(services).Processors[0].HandlerType.Should().Be<ShipmentNotifier>();
+        Assert.Equal(typeof(ShipmentNotifier), Resolve(services).Processors[0].HandlerType);
     }
 
     [Fact]
@@ -93,8 +89,8 @@ public class ProcessorRegistrationTests
 
         var execution = Resolve(services).Processors[0].Execution;
 
-        execution.BatchingMode.Should().Be(ProcessorBatchingMode.IfSupported);
-        execution.MaxConcurrency.Should().Be(4);
+        Assert.Equal(ProcessorBatchingMode.IfSupported, execution.BatchingMode);
+        Assert.Equal(4, execution.MaxConcurrency);
     }
 
     [Fact]
@@ -115,8 +111,8 @@ public class ProcessorRegistrationTests
 
         var failures = new AlbertoModuleValidator().Collect(captured!);
 
-        failures.Should().Contain(f => f.Code == "ALB0002");
-        failures.Single(f => f.Code == "ALB0002").Problem.Should().Contain("ShipmentNotifier");
+        Assert.Contains(failures, f => f.Code == "ALB0002");
+        Assert.Contains("ShipmentNotifier", failures.Single(f => f.Code == "ALB0002").Problem);
     }
 
     [Fact]
@@ -126,8 +122,7 @@ public class ProcessorRegistrationTests
             _ => (_, _) => Task.CompletedTask,
             processorId: "shipment-lambda"));
 
-        Resolve(services).Processors.Should().ContainSingle()
-            .Which.HandlerType.Should().BeNull();
+        Assert.Null(Assert.Single(Resolve(services).Processors).HandlerType);
     }
 
     [Fact]
@@ -141,9 +136,8 @@ public class ProcessorRegistrationTests
             declaration,
             stateStoreFactory: _ => throw new InvalidOperationException("not needed by this test")));
 
-        var processor = Resolve(services).Processors.Should().ContainSingle()
-            .Which;
-        processor.ProcessorId.Should().Be("shipment-summary");
-        processor.Kind.Should().Be(ProcessorKind.Projection);
+        var processor = Assert.Single(Resolve(services).Processors);
+        Assert.Equal("shipment-summary", processor.ProcessorId);
+        Assert.Equal(ProcessorKind.Projection, processor.Kind);
     }
 }

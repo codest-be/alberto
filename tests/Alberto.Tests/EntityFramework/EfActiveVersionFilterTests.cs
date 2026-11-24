@@ -3,7 +3,6 @@ using Alberto.EntityFramework.Inline;
 using Alberto.Postgres;
 using Alberto.Projections;
 using Alberto.Tests.Subscriptions;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -27,9 +26,9 @@ public sealed class EfActiveVersionFilterModelTests
 
         var sql = context.ActiveCounters.ToQueryString();
 
-        sql.Should().Contain("alberto_projection_rebuild_meta",
-            "the active version must be read per query, not cached on a pooled context");
-        sql.Should().Contain("active_version");
+        // the active version must be read per query, not cached on a pooled context
+        Assert.Contains("alberto_projection_rebuild_meta", sql);
+        Assert.Contains("active_version", sql);
     }
 
     [Fact]
@@ -37,10 +36,9 @@ public sealed class EfActiveVersionFilterModelTests
     {
         using var context = NewContext();
 
-        context.ActiveCounters
+        Assert.DoesNotContain("alberto_projection_rebuild_meta", context.ActiveCounters
             .IgnoreQueryFilters([ProjectionQueryFilters.ActiveVersion])
-            .ToQueryString()
-            .Should().NotContain("alberto_projection_rebuild_meta");
+            .ToQueryString());
     }
 
     [Fact]
@@ -48,7 +46,7 @@ public sealed class EfActiveVersionFilterModelTests
     {
         using var context = NewContext();
 
-        context.Counters.ToQueryString().Should().NotContain("alberto_projection_rebuild_meta");
+        Assert.DoesNotContain("alberto_projection_rebuild_meta", context.Counters.ToQueryString());
     }
 
     [Fact]
@@ -56,7 +54,7 @@ public sealed class EfActiveVersionFilterModelTests
     {
         using var context = NewContext();
 
-        context.Database.GenerateCreateScript().Should().NotContain("alberto_projection_rebuild_meta");
+        Assert.DoesNotContain("alberto_projection_rebuild_meta", context.Database.GenerateCreateScript());
     }
 }
 
@@ -87,15 +85,15 @@ public sealed class EfActiveVersionFilterTests(StateStoreRebuildVersionFixture f
         await StartRebuildAsync();
         await Store(2).ApplyChangesAsync(Upsert(docId, 20), [], Ct);
 
-        (await PlainReadAsync(docId)).Should().Equal([10],
-            "mid-rebuild, the shadow row must stay invisible to application reads");
+        // mid-rebuild, the shadow row must stay invisible to application reads
+        Assert.Equal(10, Assert.Single(await PlainReadAsync(docId)));
 
         await PromoteAsync();
 
-        (await PlainReadAsync(docId)).Should().Equal([20],
-            "the very next query after the flip reads the new version, no refresh interval");
-        (await UnfilteredReadAsync(docId)).Should().BeEquivalentTo([10, 20],
-            "opting out of the named filter shows every version");
+        // the very next query after the flip reads the new version, no refresh interval
+        Assert.Equal(20, Assert.Single(await PlainReadAsync(docId)));
+        // opting out of the named filter shows every version
+        Assert.Equivalent(new[] { 10, 20 }, (await UnfilteredReadAsync(docId)), strict: true);
     }
 
     [Fact]
@@ -106,7 +104,7 @@ public sealed class EfActiveVersionFilterTests(StateStoreRebuildVersionFixture f
 
         await Store(1).ApplyChangesAsync(Upsert(docId, 5), [], Ct);
 
-        (await PlainReadAsync(docId)).Should().Equal([5]);
+        Assert.Equal(5, Assert.Single(await PlainReadAsync(docId)));
     }
 
     [Fact]
@@ -123,8 +121,8 @@ public sealed class EfActiveVersionFilterTests(StateStoreRebuildVersionFixture f
         await shadow.ApplyChangesAsync(Upsert(docId, 2), [], Ct);
         await shadow.ApplyChangesAsync(Upsert(docId, 3), [], Ct);
 
-        (await shadow.LoadManyAsync([docId], Ct))[docId].Counter.Should().Be(3);
-        (await shadow.ListRecentAsync(1000, Ct)).Should().Contain(e => e.DocumentId == docId);
+        Assert.Equal(3, (await shadow.LoadManyAsync([docId], Ct))[docId].Counter);
+        Assert.Contains((await shadow.ListRecentAsync(1000, Ct)), e => e.DocumentId == docId);
     }
 
     [Fact]
@@ -141,8 +139,8 @@ public sealed class EfActiveVersionFilterTests(StateStoreRebuildVersionFixture f
         await new EfProjectionStateClearer<ActiveCounterEntity, EfTestDbContext>(
             fixture.ContextFactory(), ProcessorId).ClearVersionAsync(1, Ct);
 
-        (await UnfilteredReadAsync(docId)).Should().Equal([2],
-            "the sweep must reach the version the filter hides");
+        // the sweep must reach the version the filter hides
+        Assert.Equal(2, Assert.Single(await UnfilteredReadAsync(docId)));
     }
 
     [Fact]
@@ -165,7 +163,8 @@ public sealed class EfActiveVersionFilterTests(StateStoreRebuildVersionFixture f
         var v1 = await context.ActiveCounters
             .IgnoreQueryFilters([ProjectionQueryFilters.ActiveVersion])
             .SingleAsync(e => e.DocumentId == docId && e.RebuildVersion == 1, Ct);
-        v1.Counter.Should().Be(3, "the second event must load the v1 row, not insert a duplicate");
+        // the second event must load the v1 row, not insert a duplicate
+        Assert.Equal(3, v1.Counter);
     }
 
     // ------------------------------------------------------------------ helpers

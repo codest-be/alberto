@@ -1,6 +1,5 @@
 using Alberto.Projections;
 using Alberto.EntityFramework.Inline;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.EntityFramework;
@@ -31,6 +30,6 @@ public sealed class EfInlineProjectionNoTransactionTests(EfProjectionTestFixture
             TestContext.Current.CancellationToken);
 
         var versions = await fixture.ReadVersionsAsync(entityId);
-        versions[ProjectionVersions.Initial].Counter.Should().Be(7);
+        Assert.Equal(7, versions[ProjectionVersions.Initial].Counter);
     }
 }

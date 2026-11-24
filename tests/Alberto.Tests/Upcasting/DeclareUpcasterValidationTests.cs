@@ -2,7 +2,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Alberto.Tests.SampleEvents;
 using Alberto.Upcasting;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests;
@@ -24,8 +23,8 @@ public sealed class DeclareUpcasterValidationTests
     [InlineData("  ")]
     public void An_event_type_id_is_required(string id)
     {
-        FluentActions.Invoking(() => DeclareUpcaster.For<VersionedOrder>(id))
-            .Should().Throw<ArgumentException>().WithParameterName("eventTypeId");
+        var exception = Assert.ThrowsAny<ArgumentException>(() => DeclareUpcaster.For<VersionedOrder>(id));
+        Assert.Equal("eventTypeId", exception.ParamName);
     }
 
     public static TheoryData<string> Overloads => ["final", "intermediate", "final+shape", "intermediate+shape"];
@@ -43,7 +42,8 @@ public sealed class DeclareUpcasterValidationTests
             _ => () => builder.From<VersionedOrderV1, VersionedOrder>(0, V1Shape, Upcast),
         };
 
-        from.Should().Throw<ArgumentOutOfRangeException>().WithParameterName("fromVersion");
+        var exception = Assert.ThrowsAny<ArgumentOutOfRangeException>(from);
+        Assert.Equal("fromVersion", exception.ParamName);
     }
 
     [Fact]
@@ -55,8 +55,8 @@ public sealed class DeclareUpcasterValidationTests
             .From<VersionedOrderV1>(3, Upcast)
             .From<VersionedOrderV1>(3, Upcast);
 
-        builder.Invoking(b => b.Build()).Should().Throw<InvalidOperationException>()
-            .WithMessage("*duplicate steps for version(s) 3. *");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(() => builder.Build());
+        Assert.Contains("duplicate steps for version(s) 3. ", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -66,16 +66,16 @@ public sealed class DeclareUpcasterValidationTests
             .From<VersionedOrderV1, VersionedOrderV1>(1, v => v)
             .From<VersionedOrderV1>(3, Upcast);
 
-        builder.Invoking(b => b.Build()).Should().Throw<InvalidOperationException>()
-            .WithMessage("*between versions 1 and 3. Add a step for source version 2.");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(() => builder.Build());
+        Assert.EndsWith("between versions 1 and 3. Add a step for source version 2.", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void The_current_version_follows_the_last_step()
     {
-        DeclareUpcaster.For<VersionedOrder>(Id)
+        Assert.Equal(3, DeclareUpcaster.For<VersionedOrder>(Id)
             .From<VersionedOrderV1, VersionedOrderV1>(1, v => v)
             .From<VersionedOrderV1>(2, Upcast)
-            .Build().CurrentVersion.Should().Be(3);
+            .Build().CurrentVersion);
     }
 }

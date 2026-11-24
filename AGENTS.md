@@ -111,7 +111,7 @@ There is no operator tool and no admin API. Operators resolve the core interface
 | Database | PostgreSQL (Npgsql 10.0.3) |
 | Migrations | DbUp-PostgreSQL 7.0.1 (event store), EF Core 10.0.15 on both targets (`Alberto.EntityFramework`); stays 10.x until the Npgsql EF provider ships 11.0.0 GA |
 | Observability | OpenTelemetry 1.21.0 |
-| Testing | xUnit v3 3.2.2, FluentAssertions 8.11.0, Testcontainers 4.16.0 |
+| Testing | xUnit v3 3.2.2, Testcontainers 4.16.0 |
 
 ## Package Management
 

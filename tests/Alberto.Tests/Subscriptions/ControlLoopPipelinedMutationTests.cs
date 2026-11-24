@@ -2,7 +2,6 @@ using System.Text.Json;
 using Alberto.InMemory;
 using Alberto.Checkpoints;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
@@ -349,9 +348,11 @@ public sealed class ControlLoopPipelinedMutationTests
 
         lock (recordedLock)
         {
-            recorded.Should().Contain(3);
-            recorded.Should().NotContain(1, "position 1 is before the pre-seeded checkpoint");
-            recorded.Should().NotContain(2, "position 2 is before the pre-seeded checkpoint");
+            Assert.Contains(3, recorded);
+            // position 1 is before the pre-seeded checkpoint
+            Assert.DoesNotContain(1, recorded);
+            // position 2 is before the pre-seeded checkpoint
+            Assert.DoesNotContain(2, recorded);
         }
     }
 
@@ -393,8 +394,8 @@ public sealed class ControlLoopPipelinedMutationTests
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
 
-        countingBackend.StreamAllCount.Should().Be(countAfterCatchUp,
-            "once caught up, the loop must idle rather than re-read the backend every poll cycle");
+        // once caught up, the loop must idle rather than re-read the backend every poll cycle
+        Assert.Equal(countAfterCatchUp, countingBackend.StreamAllCount);
     }
 
     // ── 337: ReportProgress(head - SafeCheckpoint) => head + ... (also exercises 372, same expr) ──
@@ -448,7 +449,7 @@ public sealed class ControlLoopPipelinedMutationTests
             await WaitForAsync(() => healthState.Get(processorId).Lag == 2,
                 TestContext.Current.CancellationToken);
 
-            healthState.Get(processorId).Lag.Should().Be(2);
+            Assert.Equal(2, healthState.Get(processorId).Lag);
 
             await cts.CancelAsync();
             release2.TrySetResult();
@@ -495,8 +496,7 @@ public sealed class ControlLoopPipelinedMutationTests
         var getCountBeforeShortWindow = checkpoints.GetCount;
         await Task.Delay(40, TestContext.Current.CancellationToken);
         var getCountAfterShortWindow = checkpoints.GetCount;
-        (getCountAfterShortWindow - getCountBeforeShortWindow).Should().BeLessThanOrEqualTo(3,
-            "removing the caught-up delay would busy-spin, calling GetAsync far more than once " +
+        Assert.True((getCountAfterShortWindow - getCountBeforeShortWindow) <= 3, "removing the caught-up delay would busy-spin, calling GetAsync far more than once " +
             "in a window well under one polling interval");
 
         // Phase 2 (kills lines 532/533): span several more polling intervals with nothing new to
@@ -510,9 +510,9 @@ public sealed class ControlLoopPipelinedMutationTests
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
 
-        saveCountAfterLongWindow.Should().Be(saveCountBeforeLongWindow,
-            "SaveAsync must not be called again once the checkpoint store already agrees with the " +
-            "safe checkpoint — a stale 'current' or a >= guard would call it every idle cycle");
+        // SaveAsync must not be called again once the checkpoint store already agrees with the safe
+        // checkpoint — a stale 'current' or a >= guard would call it every idle cycle
+        Assert.Equal(saveCountBeforeLongWindow, saveCountAfterLongWindow);
     }
 
     // ── 346-350: NoCoverage — head advanced but the read returned nothing ─────────
@@ -544,7 +544,7 @@ public sealed class ControlLoopPipelinedMutationTests
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
 
-        (await checkpoints.GetAsync(processorId, TestContext.Current.CancellationToken)).Should().Be(5);
+        Assert.Equal(5, await checkpoints.GetAsync(processorId, TestContext.Current.CancellationToken));
     }
 
     // ── short batch: read position jumps to the head ───────────────────────────────
@@ -582,7 +582,7 @@ public sealed class ControlLoopPipelinedMutationTests
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
 
-        fixedHeadBackend.StreamAllCount.Should().Be(1);
+        Assert.Equal(1, fixedHeadBackend.StreamAllCount);
     }
 
     // ── 384 (ReportFailure removed) + 426 (ReportFaulted removed) ──────────────────
@@ -624,9 +624,9 @@ public sealed class ControlLoopPipelinedMutationTests
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
 
-        loop.IsFaulted.Should().BeTrue();
-        healthState.Get(processorId).IsFaulted.Should().BeTrue();
-        logger.Entries.Should().Contain(e =>
+        Assert.True(loop.IsFaulted);
+        Assert.True(healthState.Get(processorId).IsFaulted);
+        Assert.Contains(logger.Entries, e =>
             e.Level == LogLevel.Critical && e.Message.Contains(processorId));
     }
 
@@ -665,9 +665,9 @@ public sealed class ControlLoopPipelinedMutationTests
             .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         await head.StopAsync(CancellationToken.None);
 
-        logger.Entries.Should().NotContain(e =>
-            e.Level == LogLevel.Warning && e.Message.Contains("abandoned"),
-            "no worker was stuck, so the drain-timeout warning must not fire");
+        // no worker was stuck, so the drain-timeout warning must not fire
+        Assert.DoesNotContain(logger.Entries, e =>
+            e.Level == LogLevel.Warning && e.Message.Contains("abandoned"));
     }
 
     // ── 399/412/416: genuine timeout must warn, with the correct abandoned-worker count ──
@@ -722,10 +722,10 @@ public sealed class ControlLoopPipelinedMutationTests
                 e.Level == LogLevel.Warning && e.Message.Contains("abandoned 1 worker(s)")),
                 TestContext.Current.CancellationToken);
 
-            logger.Entries.Should().Contain(e =>
+            // exactly one of the three workers (position 2's) was stuck
+            Assert.Contains(logger.Entries, e =>
                 e.Level == LogLevel.Warning &&
-                e.Message.Contains("abandoned 1 worker(s)"),
-                "exactly one of the three workers (position 2's) was stuck");
+                e.Message.Contains("abandoned 1 worker(s)"));
 
             await head.StopAsync(CancellationToken.None)
                 .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);

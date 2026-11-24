@@ -1,7 +1,6 @@
 using Alberto.Postgres;
 using Alberto.Projections;
 using Alberto.Tests.Infrastructure;
-using FluentAssertions;
 using Npgsql;
 using Xunit;
 
@@ -108,11 +107,11 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
 
         var state = await CreateStore().GetAsync(processorId, projectionType, cancellationToken);
 
-        state.Status.Should().Be(RebuildStatus.Idle);
-        state.ActiveVersion.Should().Be(1);
-        state.RebuildingVersion.Should().BeNull();
-        state.IsRebuildInFlight.Should().BeFalse();
-        state.ProjectionType.Should().Be(projectionType);
+        Assert.Equal(RebuildStatus.Idle, state.Status);
+        Assert.Equal(1, state.ActiveVersion);
+        Assert.Null(state.RebuildingVersion);
+        Assert.False(state.IsRebuildInFlight);
+        Assert.Equal(projectionType, state.ProjectionType);
     }
 
     [Fact]
@@ -124,17 +123,18 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
 
         var started = await store.StartAsync(processorId, projectionType, targetPosition: 4711, cancellationToken);
 
-        started.Status.Should().Be(RebuildStatus.Rebuilding);
-        started.ActiveVersion.Should().Be(1, "readers must keep seeing the version they were on");
-        started.RebuildingVersion.Should().Be(2);
-        started.LastAllocatedVersion.Should().Be(2);
-        started.TargetPosition.Should().Be(4711);
-        started.StartedAt.Should().NotBeNull();
-        started.IsRebuildInFlight.Should().BeTrue();
+        Assert.Equal(RebuildStatus.Rebuilding, started.Status);
+        // readers must keep seeing the version they were on
+        Assert.Equal(1, started.ActiveVersion);
+        Assert.Equal(2, started.RebuildingVersion);
+        Assert.Equal(2, started.LastAllocatedVersion);
+        Assert.Equal(4711, started.TargetPosition);
+        Assert.NotNull(started.StartedAt);
+        Assert.True(started.IsRebuildInFlight);
 
         // Survives the round trip, so a coordinator restarting mid-rebuild sees the same thing.
         var reread = await store.GetAsync(processorId, projectionType, cancellationToken);
-        reread.Should().BeEquivalentTo(started);
+        Assert.Equivalent(started, reread, strict: true);
     }
 
     [Fact]
@@ -147,12 +147,12 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         await store.StartAsync(processorId, projectionType, targetPosition: 10, cancellationToken);
 
         var second = () => store.StartAsync(processorId, projectionType, targetPosition: 20, cancellationToken);
-        await second.Should().ThrowAsync<RebuildStateException>();
+        await Assert.ThrowsAnyAsync<RebuildStateException>(second);
 
         // The rejected start must not have moved anything.
         var state = await store.GetAsync(processorId, projectionType, cancellationToken);
-        state.RebuildingVersion.Should().Be(2);
-        state.TargetPosition.Should().Be(10);
+        Assert.Equal(2, state.RebuildingVersion);
+        Assert.Equal(10, state.TargetPosition);
     }
 
     [Fact]
@@ -166,8 +166,8 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         await store.MarkReadyAsync(processorId, cancellationToken);
 
         var second = () => store.StartAsync(processorId, projectionType, targetPosition: 20, cancellationToken);
-        await second.Should().ThrowAsync<RebuildStateException>(
-            "a rebuilt-but-unpromoted version is still in flight");
+        // a rebuilt-but-unpromoted version is still in flight
+        await Assert.ThrowsAnyAsync<RebuildStateException>(second);
     }
 
     [Fact]
@@ -180,9 +180,9 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         await store.StartAsync(processorId, projectionType, targetPosition: 10, cancellationToken);
         var ready = await store.MarkReadyAsync(processorId, cancellationToken);
 
-        ready.Status.Should().Be(RebuildStatus.Ready);
-        ready.RebuildingVersion.Should().Be(2);
-        ready.IsRebuildInFlight.Should().BeTrue();
+        Assert.Equal(RebuildStatus.Ready, ready.Status);
+        Assert.Equal(2, ready.RebuildingVersion);
+        Assert.True(ready.IsRebuildInFlight);
     }
 
     [Fact]
@@ -193,7 +193,7 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         var store = CreateStore();
 
         var act = () => store.MarkReadyAsync(processorId, cancellationToken);
-        await act.Should().ThrowAsync<RebuildStateException>();
+        await Assert.ThrowsAnyAsync<RebuildStateException>(act);
     }
 
     [Theory]
@@ -210,10 +210,10 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         await store.StartAsync(processorId, projectionType, targetPosition: 10, cancellationToken);
         var requested = await store.RequestPromotionAsync(processorId, force, cancellationToken);
 
-        requested.RequestedAction.Should().Be(expected);
-        requested.Status.Should().Be(RebuildStatus.Rebuilding);
-        requested.ActiveVersion.Should().Be(1);
-        requested.RebuildingVersion.Should().Be(2);
+        Assert.Equal(expected, requested.RequestedAction);
+        Assert.Equal(RebuildStatus.Rebuilding, requested.Status);
+        Assert.Equal(1, requested.ActiveVersion);
+        Assert.Equal(2, requested.RebuildingVersion);
     }
 
     [Fact]
@@ -228,9 +228,9 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
 
         var requested = await store.RequestAbortAsync(processorId, cancellationToken);
 
-        requested.RequestedAction.Should().Be(RebuildOperatorAction.Abort);
-        requested.Status.Should().Be(RebuildStatus.Rebuilding);
-        (await CountStateAsync(projectionType, 2, cancellationToken)).Should().Be(1);
+        Assert.Equal(RebuildOperatorAction.Abort, requested.RequestedAction);
+        Assert.Equal(RebuildStatus.Rebuilding, requested.Status);
+        Assert.Equal(1, await CountStateAsync(projectionType, 2, cancellationToken));
     }
 
     [Fact]
@@ -251,27 +251,27 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         var outcome = await store.PromoteAsync(processorId, force: false, cancellationToken);
         var promoted = outcome.State;
 
-        promoted.Status.Should().Be(RebuildStatus.Completed);
-        promoted.ActiveVersion.Should().Be(2);
-        promoted.RebuildingVersion.Should().BeNull();
-        promoted.CompletedAt.Should().NotBeNull();
-        promoted.IsRebuildInFlight.Should().BeFalse();
-        outcome.DiscardedVersion.Should().Be(
-            1, "the coordinator needs the superseded version to reclaim it later");
+        Assert.Equal(RebuildStatus.Completed, promoted.Status);
+        Assert.Equal(2, promoted.ActiveVersion);
+        Assert.Null(promoted.RebuildingVersion);
+        Assert.NotNull(promoted.CompletedAt);
+        Assert.False(promoted.IsRebuildInFlight);
+        // the coordinator needs the superseded version to reclaim it later
+        Assert.Equal(1, outcome.DiscardedVersion);
 
-        (await CountStateAsync(projectionType, 1, cancellationToken)).Should().Be(
-            2, "a reader that resolved version 1 just before the flip is still holding that " +
-               "number, and deleting the rows here is what used to leave it seeing nothing");
-        (await CountStateAsync(projectionType, 2, cancellationToken)).Should().Be(
-            1, "the promoted version's rows are exactly what the rebuild wrote");
+        // a reader that resolved version 1 just before the flip is still holding that number, and
+        // deleting the rows here is what used to leave it seeing nothing
+        Assert.Equal(2, await CountStateAsync(projectionType, 1, cancellationToken));
+        // the promoted version's rows are exactly what the rebuild wrote
+        Assert.Equal(1, await CountStateAsync(projectionType, 2, cancellationToken));
 
         // The reclaim is a separate step the coordinator takes a grace period later, once no
         // reader can still be holding the superseded version.
         await store.DiscardStateVersionAsync(projectionType, outcome.DiscardedVersion, cancellationToken);
 
-        (await CountStateAsync(projectionType, 1, cancellationToken)).Should().Be(0);
-        (await CountStateAsync(projectionType, 2, cancellationToken)).Should().Be(
-            1, "reclaiming the superseded version must not touch the promoted one");
+        Assert.Equal(0, await CountStateAsync(projectionType, 1, cancellationToken));
+        // reclaiming the superseded version must not touch the promoted one
+        Assert.Equal(1, await CountStateAsync(projectionType, 2, cancellationToken));
     }
 
     [Fact]
@@ -284,18 +284,18 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         await store.StartAsync(processorId, projectionType, targetPosition: 10, cancellationToken);
 
         var unforced = () => store.PromoteAsync(processorId, force: false, cancellationToken);
-        await unforced.Should().ThrowAsync<RebuildStateException>(
-            "publishing a projection that has not finished replaying needs an explicit override");
+        // publishing a projection that has not finished replaying needs an explicit override
+        await Assert.ThrowsAnyAsync<RebuildStateException>(unforced);
 
         // The rejected promote left the rebuild exactly where it was.
         var afterRejection = await store.GetAsync(processorId, projectionType, cancellationToken);
-        afterRejection.Status.Should().Be(RebuildStatus.Rebuilding);
-        afterRejection.ActiveVersion.Should().Be(1);
+        Assert.Equal(RebuildStatus.Rebuilding, afterRejection.Status);
+        Assert.Equal(1, afterRejection.ActiveVersion);
 
         var forced = await store.PromoteAsync(processorId, force: true, cancellationToken);
-        forced.State.ActiveVersion.Should().Be(2);
-        forced.State.Status.Should().Be(RebuildStatus.Completed);
-        forced.DiscardedVersion.Should().Be(1);
+        Assert.Equal(2, forced.State.ActiveVersion);
+        Assert.Equal(RebuildStatus.Completed, forced.State.Status);
+        Assert.Equal(1, forced.DiscardedVersion);
     }
 
     [Fact]
@@ -306,8 +306,8 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         var store = CreateStore();
 
         var act = () => store.PromoteAsync(processorId, force: true, cancellationToken);
-        await act.Should().ThrowAsync<RebuildStateException>(
-            "force overrides an unfinished rebuild, not the absence of one");
+        // force overrides an unfinished rebuild, not the absence of one
+        await Assert.ThrowsAnyAsync<RebuildStateException>(act);
     }
 
     [Fact]
@@ -326,24 +326,25 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         var outcome = await store.AbortAsync(processorId, cancellationToken);
         var aborted = outcome.State;
 
-        aborted.Status.Should().Be(RebuildStatus.Aborted);
-        aborted.ActiveVersion.Should().Be(1, "readers must not notice an abandoned rebuild");
-        aborted.RebuildingVersion.Should().BeNull();
-        aborted.IsRebuildInFlight.Should().BeFalse();
-        outcome.DiscardedVersion.Should().Be(
-            2, "an abort discards the version it abandoned, not the live one");
+        Assert.Equal(RebuildStatus.Aborted, aborted.Status);
+        // readers must not notice an abandoned rebuild
+        Assert.Equal(1, aborted.ActiveVersion);
+        Assert.Null(aborted.RebuildingVersion);
+        Assert.False(aborted.IsRebuildInFlight);
+        // an abort discards the version it abandoned, not the live one
+        Assert.Equal(2, outcome.DiscardedVersion);
 
-        (await CountStateAsync(projectionType, 1, cancellationToken)).Should().Be(1);
-        (await CountStateAsync(projectionType, 2, cancellationToken)).Should().Be(
-            2, "the abandoned version is unreachable, but its rows wait for the sweep — the " +
-               "shadow loop that wrote them has not necessarily noticed the abort yet, so a " +
-               "delete here would race its last writes rather than remove them");
+        Assert.Equal(1, await CountStateAsync(projectionType, 1, cancellationToken));
+        // the abandoned version is unreachable, but its rows wait for the sweep — the shadow loop that
+        // wrote them has not necessarily noticed the abort yet, so a delete here would race its last
+        // writes rather than remove them
+        Assert.Equal(2, await CountStateAsync(projectionType, 2, cancellationToken));
 
         await store.DiscardStateVersionAsync(projectionType, outcome.DiscardedVersion, cancellationToken);
 
-        (await CountStateAsync(projectionType, 1, cancellationToken)).Should().Be(
-            1, "reclaiming the abandoned version must not touch the live one");
-        (await CountStateAsync(projectionType, 2, cancellationToken)).Should().Be(0);
+        // reclaiming the abandoned version must not touch the live one
+        Assert.Equal(1, await CountStateAsync(projectionType, 1, cancellationToken));
+        Assert.Equal(0, await CountStateAsync(projectionType, 2, cancellationToken));
     }
 
     [Fact]
@@ -371,10 +372,10 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
 
         await CreateStore().DiscardStateVersionAsync(projectionType, 2, cancellationToken);
 
-        (await CountStateAsync(projectionType, 2, cancellationToken)).Should().Be(0);
-        (await CountStateAsync(projectionType, 1, cancellationToken)).Should().Be(3);
-        (await CountStateAsync(projectionType, 3, cancellationToken)).Should().Be(3);
-        (await CountStateAsync(otherType, 2, cancellationToken)).Should().Be(3);
+        Assert.Equal(0, await CountStateAsync(projectionType, 2, cancellationToken));
+        Assert.Equal(3, await CountStateAsync(projectionType, 1, cancellationToken));
+        Assert.Equal(3, await CountStateAsync(projectionType, 3, cancellationToken));
+        Assert.Equal(3, await CountStateAsync(otherType, 2, cancellationToken));
     }
 
     [Fact]
@@ -392,7 +393,7 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         await store.DiscardStateVersionAsync(projectionType, 7, cancellationToken);
         await store.DiscardStateVersionAsync(projectionType, 7, cancellationToken);
 
-        (await CountStateAsync(projectionType, 1, cancellationToken)).Should().Be(1);
+        Assert.Equal(1, await CountStateAsync(projectionType, 1, cancellationToken));
     }
 
     [Fact]
@@ -403,7 +404,7 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         var store = CreateStore();
 
         var act = () => store.AbortAsync(processorId, cancellationToken);
-        await act.Should().ThrowAsync<RebuildStateException>();
+        await Assert.ThrowsAnyAsync<RebuildStateException>(act);
     }
 
     [Fact]
@@ -419,10 +420,11 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
 
         var second = await store.StartAsync(processorId, projectionType, targetPosition: 99, cancellationToken);
 
-        second.ActiveVersion.Should().Be(2);
-        second.RebuildingVersion.Should().Be(
-            3, "versions are allocated from the active one, so they never collide with live rows");
-        second.CompletedAt.Should().BeNull("the previous rebuild's completion must not linger");
+        Assert.Equal(2, second.ActiveVersion);
+        // versions are allocated from the active one, so they never collide with live rows
+        Assert.Equal(3, second.RebuildingVersion);
+        // the previous rebuild's completion must not linger
+        Assert.Null(second.CompletedAt);
     }
 
     [Fact]
@@ -441,9 +443,10 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         // was writing them — that lives in the application process and finds out one poll later.
         // Handing version 2 back would let those late writes seed the retry, and every event
         // would be applied twice.
-        retried.ActiveVersion.Should().Be(1, "an abort leaves the version readers see alone");
-        retried.RebuildingVersion.Should().Be(3);
-        retried.Status.Should().Be(RebuildStatus.Rebuilding);
+        // an abort leaves the version readers see alone
+        Assert.Equal(1, retried.ActiveVersion);
+        Assert.Equal(3, retried.RebuildingVersion);
+        Assert.Equal(RebuildStatus.Rebuilding, retried.Status);
     }
 
     [Fact]
@@ -470,9 +473,9 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         seen.Add((await store.StartAsync(processorId, projectionType, 10, cancellationToken))
             .RebuildingVersion!.Value);
 
-        seen.Should().Equal([2, 3, 4, 5, 6],
-            "the high-water mark advances on every allocation, so no run of aborts can make two "
-            + "rebuilds share a version");
+        // the high-water mark advances on every allocation, so no run of aborts can make two rebuilds
+        // share a version
+        Assert.Equal([2, 3, 4, 5, 6], seen);
     }
 
     [Fact]
@@ -486,8 +489,7 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
 
         var all = await store.ListAsync(cancellationToken);
 
-        all.Should().ContainSingle(s => s.ProcessorId == processorId)
-            .Which.Status.Should().Be(RebuildStatus.Rebuilding);
+        Assert.Equal(RebuildStatus.Rebuilding, Assert.Single(all, s => s.ProcessorId == processorId).Status);
     }
 
     [Fact]
@@ -516,6 +518,6 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
 
         var outcomes = await Task.WhenAll(attempts);
 
-        outcomes.Count(won => won).Should().Be(1);
+        Assert.Equal(1, outcomes.Count(won => won));
     }
 }

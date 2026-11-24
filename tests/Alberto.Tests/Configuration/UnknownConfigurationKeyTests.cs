@@ -2,7 +2,6 @@ using Alberto.Configuration;
 using Alberto.InMemory;
 using Alberto.Subscriptions;
 using Alberto.Tests.Testing;
-using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 
@@ -50,7 +49,7 @@ public class UnknownConfigurationKeyTests
         var failures = Validate(BaseDefinition(),
             Config(($"Alberto:Modules:{ModuleKey}:ControlLoop:BatchSize", "42")));
 
-        failures.Should().NotContain(f => f.Code == "ALB0008");
+        Assert.DoesNotContain(failures, f => f.Code == "ALB0008");
     }
 
     [Fact]
@@ -59,7 +58,7 @@ public class UnknownConfigurationKeyTests
         var failures = Validate(BaseDefinition(),
             Config(($"Alberto:Modules:{ModuleKey}:ControlLoop:Retry:MaxRetries", "3")));
 
-        failures.Should().NotContain(f => f.Code == "ALB0008");
+        Assert.DoesNotContain(failures, f => f.Code == "ALB0008");
     }
 
     [Fact]
@@ -68,7 +67,7 @@ public class UnknownConfigurationKeyTests
         var failures = Validate(BaseDefinition(),
             Config(($"Alberto:Modules:{ModuleKey}:Telemetry:Enabled", "false")));
 
-        failures.Should().NotContain(f => f.Code == "ALB0008");
+        Assert.DoesNotContain(failures, f => f.Code == "ALB0008");
     }
 
     [Fact]
@@ -79,7 +78,7 @@ public class UnknownConfigurationKeyTests
             Config(($"Alberto:Modules:{ModuleKey}:Processors:send-email:MaxConcurrency", "4"),
                    ($"Alberto:Modules:{ModuleKey}:Processors:send-email:BatchingMode", "Required")));
 
-        failures.Should().NotContain(f => f.Code == "ALB0008");
+        Assert.DoesNotContain(failures, f => f.Code == "ALB0008");
     }
 
     [Fact]
@@ -90,7 +89,7 @@ public class UnknownConfigurationKeyTests
             BaseDefinition(Processor("my-custom-reactor")),
             Config(($"Alberto:Modules:{ModuleKey}:Processors:my-custom-reactor:MaxConcurrency", "2")));
 
-        failures.Should().NotContain(f => f.Code == "ALB0008");
+        Assert.DoesNotContain(failures, f => f.Code == "ALB0008");
     }
 
     // ── I4.2: unknown top-level section is caught ────────────────────────────
@@ -101,7 +100,7 @@ public class UnknownConfigurationKeyTests
         var failures = Validate(BaseDefinition(),
             Config(($"Alberto:Modules:{ModuleKey}:ControlLop:BatchSize", "42"))); // typo in section name
 
-        failures.Should().ContainSingle(f => f.Code == "ALB0008" && f.Problem.Contains("ControlLop"));
+        Assert.Single(failures, f => f.Code == "ALB0008" && f.Problem.Contains("ControlLop"));
     }
 
     // ── I4.3: unknown leaf key in a known section is caught ──────────────────
@@ -112,7 +111,7 @@ public class UnknownConfigurationKeyTests
         var failures = Validate(BaseDefinition(),
             Config(($"Alberto:Modules:{ModuleKey}:ControlLoop:BatchSizes", "42"))); // 's' appended
 
-        failures.Should().ContainSingle(f => f.Code == "ALB0008" && f.Problem.Contains("BatchSizes"));
+        Assert.Single(failures, f => f.Code == "ALB0008" && f.Problem.Contains("BatchSizes"));
     }
 
     [Fact]
@@ -121,7 +120,7 @@ public class UnknownConfigurationKeyTests
         var failures = Validate(BaseDefinition(),
             Config(($"Alberto:Modules:{ModuleKey}:ControlLoop:Retry:MaxRetriess", "5"))); // double 's'
 
-        failures.Should().ContainSingle(f => f.Code == "ALB0008" && f.Problem.Contains("MaxRetriess"));
+        Assert.Single(failures, f => f.Code == "ALB0008" && f.Problem.Contains("MaxRetriess"));
     }
 
     // ── I4.4: did-you-mean suggestions ──────────────────────────────────────
@@ -132,8 +131,8 @@ public class UnknownConfigurationKeyTests
         var failures = Validate(BaseDefinition(),
             Config(($"Alberto:Modules:{ModuleKey}:ControlLoop:BatchSizes", "42")));
 
-        failures.Should().ContainSingle(f => f.Code == "ALB0008")
-            .Which.Remedy.Should().Contain("BatchSize", "edit-distance 1 is within threshold");
+        // edit-distance 1 is within threshold
+        Assert.Contains("BatchSize", Assert.Single(failures, f => f.Code == "ALB0008").Remedy);
     }
 
     [Fact]
@@ -142,9 +141,9 @@ public class UnknownConfigurationKeyTests
         var failures = Validate(BaseDefinition(),
             Config(($"Alberto:Modules:{ModuleKey}:ControlLoop:FooBarBazQux", "42")));
 
-        var failure = failures.Should().ContainSingle(f => f.Code == "ALB0008").Subject;
-        failure.Remedy.Should().NotContain("Did you mean",
-            "no candidate is within the edit-distance threshold");
+        var failure = Assert.Single(failures, f => f.Code == "ALB0008");
+        // no candidate is within the edit-distance threshold
+        Assert.DoesNotContain("Did you mean", failure.Remedy);
     }
 
     // ── I4.5: unknown processor leaf key is caught ───────────────────────────
@@ -156,7 +155,7 @@ public class UnknownConfigurationKeyTests
             BaseDefinition(Processor("send-email")),
             Config(($"Alberto:Modules:{ModuleKey}:Processors:send-email:MaxConcurrencyy", "4")));
 
-        failures.Should().ContainSingle(f => f.Code == "ALB0008" && f.Problem.Contains("MaxConcurrencyy"));
+        Assert.Single(failures, f => f.Code == "ALB0008" && f.Problem.Contains("MaxConcurrencyy"));
     }
 
     [Fact]
@@ -169,6 +168,6 @@ public class UnknownConfigurationKeyTests
             Config(($"Alberto:Modules:{ModuleKey}:Processors:mystery-proc:BatchingMod", "Required")));
 
         // Should flag the unknown leaf 'BatchingMod' (typo of 'BatchingMode')
-        failures.Should().ContainSingle(f => f.Code == "ALB0008" && f.Problem.Contains("BatchingMod"));
+        Assert.Single(failures, f => f.Code == "ALB0008" && f.Problem.Contains("BatchingMod"));
     }
 }

@@ -1,5 +1,4 @@
 using Alberto.InMemory;
-using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -26,14 +25,14 @@ public sealed class InMemoryProcessorLeaseManagerTests
     [Fact]
     public void LeaseDuration_reflects_the_constructor_argument()
     {
-        _manager.LeaseDuration.Should().Be(TimeSpan.FromSeconds(30));
+        Assert.Equal(TimeSpan.FromSeconds(30), _manager.LeaseDuration);
     }
 
     [Fact]
     public void LeaseDuration_defaults_to_30_seconds_when_not_specified()
     {
         var defaulted = new InMemoryProcessorLeaseManager();
-        defaulted.LeaseDuration.Should().Be(TimeSpan.FromSeconds(30));
+        Assert.Equal(TimeSpan.FromSeconds(30), defaulted.LeaseDuration);
     }
 
     [Fact]
@@ -41,10 +40,10 @@ public sealed class InMemoryProcessorLeaseManagerTests
     {
         var lease = await _manager.TryAcquireAsync("consumer", "proc", "replica-1");
 
-        lease.Should().NotBeNull();
-        lease!.ProcessorId.Should().Be("proc");
-        lease.FenceToken.Should().Be(1);
-        lease.ExpiresAt.Should().Be(_clock.GetUtcNow() + TimeSpan.FromSeconds(30));
+        Assert.NotNull(lease);
+        Assert.Equal("proc", lease!.ProcessorId);
+        Assert.Equal(1, lease.FenceToken);
+        Assert.Equal(_clock.GetUtcNow() + TimeSpan.FromSeconds(30), lease.ExpiresAt);
     }
 
     [Fact]
@@ -53,7 +52,7 @@ public sealed class InMemoryProcessorLeaseManagerTests
         var first = await _manager.TryAcquireAsync("consumer", "proc-a", "replica-1");
         var second = await _manager.TryAcquireAsync("consumer", "proc-b", "replica-1");
 
-        second!.FenceToken.Should().BeGreaterThan(first!.FenceToken);
+        Assert.True(second!.FenceToken > first!.FenceToken);
     }
 
     [Fact]
@@ -63,7 +62,7 @@ public sealed class InMemoryProcessorLeaseManagerTests
 
         var contended = await _manager.TryAcquireAsync("consumer", "proc", "replica-2");
 
-        contended.Should().BeNull();
+        Assert.Null(contended);
     }
 
     [Fact]
@@ -74,11 +73,11 @@ public sealed class InMemoryProcessorLeaseManagerTests
         _clock.Advance(TimeSpan.FromSeconds(5));
         var second = await _manager.TryAcquireAsync("consumer", "proc", "replica-1");
 
-        second.Should().NotBeNull();
-        second!.FenceToken.Should().BeGreaterThan(first!.FenceToken);
+        Assert.NotNull(second);
+        Assert.True(second!.FenceToken > first!.FenceToken);
 
-        _manager.GetActiveLease("consumer", "proc")!.Value.ExpiresAt
-            .Should().Be(_clock.GetUtcNow() + TimeSpan.FromSeconds(30), "the expiry must extend from the re-acquisition time");
+        // the expiry must extend from the re-acquisition time
+        Assert.Equal(_clock.GetUtcNow() + TimeSpan.FromSeconds(30), _manager.GetActiveLease("consumer", "proc")!.Value.ExpiresAt);
     }
 
     [Fact]
@@ -89,8 +88,9 @@ public sealed class InMemoryProcessorLeaseManagerTests
         _clock.Advance(TimeSpan.FromSeconds(31));
         var stolen = await _manager.TryAcquireAsync("consumer", "proc", "replica-2");
 
-        stolen.Should().NotBeNull();
-        (await _manager.TryAcquireAsync("consumer", "proc", "replica-1")).Should().BeNull("replica-2 now holds the lease");
+        Assert.NotNull(stolen);
+        // replica-2 now holds the lease
+        Assert.Null((await _manager.TryAcquireAsync("consumer", "proc", "replica-1")));
     }
 
     [Fact]
@@ -103,7 +103,8 @@ public sealed class InMemoryProcessorLeaseManagerTests
         _clock.Advance(TimeSpan.FromSeconds(30));
         var claimed = await _manager.TryAcquireAsync("consumer", "proc", "replica-2");
 
-        claimed.Should().NotBeNull("a lease that expires exactly now must be claimable by another replica");
+        // a lease that expires exactly now must be claimable by another replica
+        Assert.NotNull(claimed);
     }
 
     [Fact]
@@ -114,7 +115,8 @@ public sealed class InMemoryProcessorLeaseManagerTests
         _clock.Advance(TimeSpan.FromSeconds(30) - TimeSpan.FromTicks(1));
         var contended = await _manager.TryAcquireAsync("consumer", "proc", "replica-2");
 
-        contended.Should().BeNull("the lease has not yet expired");
+        // the lease has not yet expired
+        Assert.Null(contended);
     }
 
     [Fact]
@@ -126,10 +128,10 @@ public sealed class InMemoryProcessorLeaseManagerTests
         _clock.Advance(TimeSpan.FromSeconds(10));
         var renewed = await _manager.RenewLeasesAsync("consumer", "replica-1");
 
-        renewed.Should().BeEquivalentTo(["mine"]);
+        Assert.Equivalent(new[] { "mine" }, renewed, strict: true);
 
-        _manager.GetActiveLease("consumer", "mine")!.Value.ExpiresAt.Should().Be(_clock.GetUtcNow() + TimeSpan.FromSeconds(30));
-        _manager.GetActiveLease("consumer", "theirs")!.Value.ExpiresAt.Should().NotBe(_clock.GetUtcNow() + TimeSpan.FromSeconds(30));
+        Assert.Equal(_clock.GetUtcNow() + TimeSpan.FromSeconds(30), _manager.GetActiveLease("consumer", "mine")!.Value.ExpiresAt);
+        Assert.NotEqual(_clock.GetUtcNow() + TimeSpan.FromSeconds(30), _manager.GetActiveLease("consumer", "theirs")!.Value.ExpiresAt);
     }
 
     [Fact]
@@ -140,7 +142,7 @@ public sealed class InMemoryProcessorLeaseManagerTests
 
         var renewed = await _manager.RenewLeasesAsync("consumer-a", "replica-1");
 
-        renewed.Should().BeEquivalentTo(["proc"]);
+        Assert.Equivalent(new[] { "proc" }, renewed, strict: true);
     }
 
     [Fact]
@@ -151,7 +153,7 @@ public sealed class InMemoryProcessorLeaseManagerTests
 
         var renewed = await _manager.RenewLeasesAsync("consumer", "replica-1");
 
-        renewed.Should().BeEmpty();
+        Assert.Empty(renewed);
     }
 
     [Fact]
@@ -159,7 +161,7 @@ public sealed class InMemoryProcessorLeaseManagerTests
     {
         var renewed = await _manager.RenewLeasesAsync("consumer", "replica-1");
 
-        renewed.Should().BeEmpty();
+        Assert.Empty(renewed);
     }
 
     [Fact]
@@ -171,16 +173,16 @@ public sealed class InMemoryProcessorLeaseManagerTests
 
         await _manager.ReleaseAllLeasesAsync("consumer", "replica-1");
 
-        _manager.GetActiveLease("consumer", "mine").Should().BeNull();
-        _manager.GetActiveLease("consumer", "theirs").Should().NotBeNull();
-        _manager.GetActiveLease("other-consumer", "mine-elsewhere").Should().NotBeNull("releasing one consumer's leases must not touch another consumer's");
+        Assert.Null(_manager.GetActiveLease("consumer", "mine"));
+        Assert.NotNull(_manager.GetActiveLease("consumer", "theirs"));
+        // releasing one consumer's leases must not touch another consumer's
+        Assert.NotNull(_manager.GetActiveLease("other-consumer", "mine-elsewhere"));
     }
 
     [Fact]
     public void LeaseDuration_honours_a_non_default_argument()
     {
-        new InMemoryProcessorLeaseManager(_clock, TimeSpan.FromSeconds(7)).LeaseDuration
-            .Should().Be(TimeSpan.FromSeconds(7));
+        Assert.Equal(TimeSpan.FromSeconds(7), new InMemoryProcessorLeaseManager(_clock, TimeSpan.FromSeconds(7)).LeaseDuration);
     }
 
     [Fact]
@@ -189,10 +191,10 @@ public sealed class InMemoryProcessorLeaseManagerTests
         await _manager.TryAcquireAsync("consumer", "proc", "replica-1");
 
         _clock.Advance(TimeSpan.FromSeconds(30) - TimeSpan.FromTicks(1));
-        _manager.GetActiveLease("consumer", "proc").Should().NotBeNull();
+        Assert.NotNull(_manager.GetActiveLease("consumer", "proc"));
 
         _clock.Advance(TimeSpan.FromTicks(1));
-        _manager.GetActiveLease("consumer", "proc").Should().BeNull();
+        Assert.Null(_manager.GetActiveLease("consumer", "proc"));
     }
 
     [Fact]
@@ -203,7 +205,7 @@ public sealed class InMemoryProcessorLeaseManagerTests
         _clock.Advance(TimeSpan.FromSeconds(31));
         var second = await _manager.TryAcquireAsync("consumer", "proc", "replica-1");
 
-        second!.FenceToken.Should().BeGreaterThan(first!.FenceToken);
+        Assert.True(second!.FenceToken > first!.FenceToken);
     }
 
     [Fact]
@@ -212,6 +214,6 @@ public sealed class InMemoryProcessorLeaseManagerTests
         await _manager.TryAcquireAsync("consumer", "proc", "replica-1");
         _clock.Advance(TimeSpan.FromSeconds(30));
 
-        (await _manager.RenewLeasesAsync("consumer", "replica-1")).Should().BeEmpty();
+        Assert.Empty((await _manager.RenewLeasesAsync("consumer", "replica-1")));
     }
 }

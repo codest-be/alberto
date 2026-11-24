@@ -1,6 +1,5 @@
 using Alberto.Benchmarks.Compare;
 using Alberto.Benchmarks.Core;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Benchmarks;
@@ -16,8 +15,8 @@ public class ReportRendererTests
         var markdown = ReportRenderer.ToMarkdown(
             new ComparisonReport([Delta("A", ComparisonVerdict.Unchanged, 1.0)]));
 
-        markdown.Should().Contain("| Benchmark |");
-        markdown.Should().Contain("| --- |");
+        Assert.Contains("| Benchmark |", markdown);
+        Assert.Contains("| --- |", markdown);
     }
 
     [Fact]
@@ -28,8 +27,8 @@ public class ReportRendererTests
             Delta("Query.StreamAll", ComparisonVerdict.Unchanged, 1.0),
         ]));
 
-        markdown.Should().Contain("Append.Single");
-        markdown.Should().Contain("Query.StreamAll");
+        Assert.Contains("Append.Single", markdown);
+        Assert.Contains("Query.StreamAll", markdown);
     }
 
     [Fact]
@@ -38,7 +37,7 @@ public class ReportRendererTests
         var markdown = ReportRenderer.ToMarkdown(
             new ComparisonReport([Delta("A", ComparisonVerdict.Regressed, 30.0)]));
 
-        markdown.Should().Contain("REGRESSED");
+        Assert.Contains("REGRESSED", markdown);
     }
 
     [Fact]
@@ -47,7 +46,7 @@ public class ReportRendererTests
         var markdown = ReportRenderer.ToMarkdown(
             new ComparisonReport([Delta("A", ComparisonVerdict.Regressed, 30.0)]));
 
-        markdown.Should().Contain("+30.0%");
+        Assert.Contains("+30.0%", markdown);
     }
 
     [Fact]
@@ -57,8 +56,8 @@ public class ReportRendererTests
 
         var markdown = ReportRenderer.ToMarkdown(new ComparisonReport([added]));
 
-        markdown.Should().Contain("New");
-        markdown.Should().Contain("ADDED");
+        Assert.Contains("New", markdown);
+        Assert.Contains("ADDED", markdown);
     }
 
     [Fact]
@@ -66,6 +65,6 @@ public class ReportRendererTests
     {
         var markdown = ReportRenderer.ToMarkdown(new ComparisonReport([]));
 
-        markdown.Should().Contain("| Benchmark |");
+        Assert.Contains("| Benchmark |", markdown);
     }
 }

@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using Alberto.Projections;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Subscriptions;
@@ -143,10 +142,10 @@ public class DeclaredAsyncProjectionTenantRoutingTests
         await projection.ProcessEventAsync(Envelope("acme", new OrderCreated(orderA, 10m), 1), Ct);
         await projection.ProcessEventAsync(Envelope("globex", new OrderCreated(orderB, 20m), 2), Ct);
 
-        factory.For("acme").Documents.Should().ContainKey(orderA.ToString())
-            .And.NotContainKey(orderB.ToString());
-        factory.For("globex").Documents.Should().ContainKey(orderB.ToString())
-            .And.NotContainKey(orderA.ToString());
+        Assert.Contains(orderA.ToString(), factory.For("acme").Documents);
+        Assert.DoesNotContain(orderB.ToString(), factory.For("acme").Documents);
+        Assert.Contains(orderB.ToString(), factory.For("globex").Documents);
+        Assert.DoesNotContain(orderA.ToString(), factory.For("globex").Documents);
     }
 
     /// <summary>
@@ -166,7 +165,7 @@ public class DeclaredAsyncProjectionTenantRoutingTests
         await projection.ProcessEventAsync(
             Envelope("globex", new OrderCreated(Guid.NewGuid(), 1m), 4), Ct);
 
-        factory.Requests.Should().Equal("acme", "globex");
+        Assert.Equal(["acme", "globex"], factory.Requests);
     }
 
     /// <summary>
@@ -187,10 +186,10 @@ public class DeclaredAsyncProjectionTenantRoutingTests
             Envelope("globex", new OrderCreated(orderB, 20m), 2),
         ], Ct);
 
-        factory.For("acme").Documents.Should().ContainKey(orderA.ToString())
-            .And.NotContainKey(orderB.ToString());
-        factory.For("globex").Documents.Should().ContainKey(orderB.ToString())
-            .And.NotContainKey(orderA.ToString());
+        Assert.Contains(orderA.ToString(), factory.For("acme").Documents);
+        Assert.DoesNotContain(orderB.ToString(), factory.For("acme").Documents);
+        Assert.Contains(orderB.ToString(), factory.For("globex").Documents);
+        Assert.DoesNotContain(orderA.ToString(), factory.For("globex").Documents);
     }
 
     /// <summary>
@@ -214,10 +213,10 @@ public class DeclaredAsyncProjectionTenantRoutingTests
             Envelope("acme", new OrderCreated(second, 20m), 3),
         ], Ct);
 
-        factory.For("acme").WriteOrder.Should().Equal(first.ToString(), second.ToString());
+        Assert.Equal([first.ToString(), second.ToString()], factory.For("acme").WriteOrder);
         // An interrupted run must reuse the store already built for that tenant, so "acme"
         // is asked for once even though it owns two of the three runs.
-        factory.Requests.Should().Equal("acme", "globex");
+        Assert.Equal(["acme", "globex"], factory.Requests);
     }
 
     /// <summary>
@@ -238,7 +237,7 @@ public class DeclaredAsyncProjectionTenantRoutingTests
             Envelope("acme", new OrderCreated(orderId, 20m), 3),
         ], Ct);
 
-        factory.For("acme").Documents[orderId.ToString()].Amount.Should().Be(30m);
+        Assert.Equal(30m, factory.For("acme").Documents[orderId.ToString()].Amount);
     }
 
     /// <summary>
@@ -257,7 +256,7 @@ public class DeclaredAsyncProjectionTenantRoutingTests
         await projection.ProcessEventAsync(
             Envelope(null, new OrderCreated(Guid.NewGuid(), 1m), 2), Ct);
 
-        factory.Requests.Should().Equal([null]);
+        Assert.Equal([null], factory.Requests);
     }
 
     [Fact]
@@ -273,7 +272,7 @@ public class DeclaredAsyncProjectionTenantRoutingTests
 
         await projection.DisposeAsync();
 
-        factory.For("acme").Disposed.Should().BeTrue();
-        factory.For("globex").Disposed.Should().BeTrue();
+        Assert.True(factory.For("acme").Disposed);
+        Assert.True(factory.For("globex").Disposed);
     }
 }

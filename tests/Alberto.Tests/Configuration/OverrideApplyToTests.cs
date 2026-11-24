@@ -1,5 +1,4 @@
 using Alberto.Configuration;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Configuration;
@@ -18,7 +17,7 @@ public class OverrideApplyToTests
     {
         var act = () => new RetryOverrides().ApplyTo(null!);
 
-        act.Should().Throw<ArgumentNullException>();
+        Assert.ThrowsAny<ArgumentNullException>(act);
     }
 
     [Fact]
@@ -35,7 +34,7 @@ public class OverrideApplyToTests
 
         var result = new RetryOverrides().ApplyTo(base_);
 
-        result.Should().Be(base_);
+        Assert.Equal(base_, result);
     }
 
     [Fact]
@@ -44,7 +43,7 @@ public class OverrideApplyToTests
         var base_ = new RetryOptions { MaxRetries = 3 };
         var result = new RetryOverrides { MaxRetries = 10 }.ApplyTo(base_);
 
-        result.MaxRetries.Should().Be(10);
+        Assert.Equal(10, result.MaxRetries);
     }
 
     [Fact]
@@ -53,7 +52,7 @@ public class OverrideApplyToTests
         var base_ = new RetryOptions { MaxRetries = 7 };
         var result = new RetryOverrides { MaxRetries = null }.ApplyTo(base_);
 
-        result.MaxRetries.Should().Be(7);
+        Assert.Equal(7, result.MaxRetries);
     }
 
     /// <summary>Kills L62 "Null coalescing (remove left)" — RetryDelay ?? options.RetryDelay → options.RetryDelay.</summary>
@@ -63,7 +62,7 @@ public class OverrideApplyToTests
         var base_ = new RetryOptions { RetryDelay = TimeSpan.FromSeconds(1) };
         var result = new RetryOverrides { RetryDelay = TimeSpan.FromSeconds(5) }.ApplyTo(base_);
 
-        result.RetryDelay.Should().Be(TimeSpan.FromSeconds(5));
+        Assert.Equal(TimeSpan.FromSeconds(5), result.RetryDelay);
     }
 
     [Fact]
@@ -72,7 +71,7 @@ public class OverrideApplyToTests
         var base_ = new RetryOptions { RetryDelay = TimeSpan.FromSeconds(3) };
         var result = new RetryOverrides { RetryDelay = null }.ApplyTo(base_);
 
-        result.RetryDelay.Should().Be(TimeSpan.FromSeconds(3));
+        Assert.Equal(TimeSpan.FromSeconds(3), result.RetryDelay);
     }
 
     [Fact]
@@ -81,7 +80,7 @@ public class OverrideApplyToTests
         var base_ = new RetryOptions { BackoffMultiplier = 2.0 };
         var result = new RetryOverrides { BackoffMultiplier = 4.0 }.ApplyTo(base_);
 
-        result.BackoffMultiplier.Should().Be(4.0);
+        Assert.Equal(4.0, result.BackoffMultiplier);
     }
 
     [Fact]
@@ -90,7 +89,7 @@ public class OverrideApplyToTests
         var base_ = new RetryOptions { MaxRetryDelay = TimeSpan.FromMinutes(1) };
         var result = new RetryOverrides { MaxRetryDelay = TimeSpan.FromMinutes(5) }.ApplyTo(base_);
 
-        result.MaxRetryDelay.Should().Be(TimeSpan.FromMinutes(5));
+        Assert.Equal(TimeSpan.FromMinutes(5), result.MaxRetryDelay);
     }
 
     /// <summary>Kills L65 "Null coalescing (remove left)" — DeadLetterOnMaxRetries ?? options.DeadLetterOnMaxRetries → options.DeadLetterOnMaxRetries.</summary>
@@ -102,7 +101,7 @@ public class OverrideApplyToTests
         var base_ = new RetryOptions { DeadLetterOnMaxRetries = true };
         var result = new RetryOverrides { DeadLetterOnMaxRetries = false }.ApplyTo(base_);
 
-        result.DeadLetterOnMaxRetries.Should().BeFalse();
+        Assert.False(result.DeadLetterOnMaxRetries);
     }
 
     [Fact]
@@ -111,7 +110,7 @@ public class OverrideApplyToTests
         var base_ = new RetryOptions { DeadLetterOnMaxRetries = false };
         var result = new RetryOverrides { DeadLetterOnMaxRetries = null }.ApplyTo(base_);
 
-        result.DeadLetterOnMaxRetries.Should().BeFalse();
+        Assert.False(result.DeadLetterOnMaxRetries);
     }
 
     [Fact]
@@ -128,11 +127,15 @@ public class OverrideApplyToTests
 
         var result = new RetryOverrides { MaxRetries = 9 }.ApplyTo(base_);
 
-        result.MaxRetries.Should().Be(9);
-        result.RetryDelay.Should().Be(base_.RetryDelay, "untouched");
-        result.BackoffMultiplier.Should().Be(base_.BackoffMultiplier, "untouched");
-        result.MaxRetryDelay.Should().Be(base_.MaxRetryDelay, "untouched");
-        result.DeadLetterOnMaxRetries.Should().Be(base_.DeadLetterOnMaxRetries, "untouched");
+        Assert.Equal(9, result.MaxRetries);
+        // untouched
+        Assert.Equal(base_.RetryDelay, result.RetryDelay);
+        // untouched
+        Assert.Equal(base_.BackoffMultiplier, result.BackoffMultiplier);
+        // untouched
+        Assert.Equal(base_.MaxRetryDelay, result.MaxRetryDelay);
+        // untouched
+        Assert.Equal(base_.DeadLetterOnMaxRetries, result.DeadLetterOnMaxRetries);
     }
 
     // ─── DeadLetterRetryOverrides ────────────────────────────────────────────
@@ -143,7 +146,7 @@ public class OverrideApplyToTests
     {
         var act = () => new DeadLetterRetryOverrides().ApplyTo(null!);
 
-        act.Should().Throw<ArgumentNullException>();
+        Assert.ThrowsAny<ArgumentNullException>(act);
     }
 
     [Fact]
@@ -158,7 +161,7 @@ public class OverrideApplyToTests
 
         var result = new DeadLetterRetryOverrides().ApplyTo(base_);
 
-        result.Should().Be(base_);
+        Assert.Equal(base_, result);
     }
 
     /// <summary>Kills L104 NoCoverage "Null coalescing (remove left)" — PollingInterval ?? options.PollingInterval → options.PollingInterval.</summary>
@@ -168,7 +171,7 @@ public class OverrideApplyToTests
         var base_ = new DeadLetterRetryOptions { PollingInterval = TimeSpan.FromMinutes(1) };
         var result = new DeadLetterRetryOverrides { PollingInterval = TimeSpan.FromSeconds(30) }.ApplyTo(base_);
 
-        result.PollingInterval.Should().Be(TimeSpan.FromSeconds(30));
+        Assert.Equal(TimeSpan.FromSeconds(30), result.PollingInterval);
     }
 
     [Fact]
@@ -177,7 +180,7 @@ public class OverrideApplyToTests
         var base_ = new DeadLetterRetryOptions { PollingInterval = TimeSpan.FromSeconds(45) };
         var result = new DeadLetterRetryOverrides { PollingInterval = null }.ApplyTo(base_);
 
-        result.PollingInterval.Should().Be(TimeSpan.FromSeconds(45));
+        Assert.Equal(TimeSpan.FromSeconds(45), result.PollingInterval);
     }
 
     /// <summary>Kills L105 NoCoverage "Null coalescing (remove left)" — BatchSize ?? options.BatchSize → options.BatchSize.</summary>
@@ -187,7 +190,7 @@ public class OverrideApplyToTests
         var base_ = new DeadLetterRetryOptions { BatchSize = 10 };
         var result = new DeadLetterRetryOverrides { BatchSize = 3 }.ApplyTo(base_);
 
-        result.BatchSize.Should().Be(3);
+        Assert.Equal(3, result.BatchSize);
     }
 
     [Fact]
@@ -196,7 +199,7 @@ public class OverrideApplyToTests
         var base_ = new DeadLetterRetryOptions { BatchSize = 7 };
         var result = new DeadLetterRetryOverrides { BatchSize = null }.ApplyTo(base_);
 
-        result.BatchSize.Should().Be(7);
+        Assert.Equal(7, result.BatchSize);
     }
 
     /// <summary>Kills L106 NoCoverage "Null coalescing (remove left)" — ClaimLease ?? options.ClaimLease → options.ClaimLease.</summary>
@@ -206,7 +209,7 @@ public class OverrideApplyToTests
         var base_ = new DeadLetterRetryOptions { ClaimLease = TimeSpan.FromMinutes(15) };
         var result = new DeadLetterRetryOverrides { ClaimLease = TimeSpan.FromMinutes(5) }.ApplyTo(base_);
 
-        result.ClaimLease.Should().Be(TimeSpan.FromMinutes(5));
+        Assert.Equal(TimeSpan.FromMinutes(5), result.ClaimLease);
     }
 
     [Fact]
@@ -215,7 +218,7 @@ public class OverrideApplyToTests
         var base_ = new DeadLetterRetryOptions { ClaimLease = TimeSpan.FromMinutes(20) };
         var result = new DeadLetterRetryOverrides { ClaimLease = null }.ApplyTo(base_);
 
-        result.ClaimLease.Should().Be(TimeSpan.FromMinutes(20));
+        Assert.Equal(TimeSpan.FromMinutes(20), result.ClaimLease);
     }
 
     [Fact]
@@ -230,9 +233,11 @@ public class OverrideApplyToTests
 
         var result = new DeadLetterRetryOverrides { BatchSize = 20 }.ApplyTo(base_);
 
-        result.BatchSize.Should().Be(20);
-        result.PollingInterval.Should().Be(base_.PollingInterval, "untouched");
-        result.ClaimLease.Should().Be(base_.ClaimLease, "untouched");
+        Assert.Equal(20, result.BatchSize);
+        // untouched
+        Assert.Equal(base_.PollingInterval, result.PollingInterval);
+        // untouched
+        Assert.Equal(base_.ClaimLease, result.ClaimLease);
     }
 
     // ─── ProcessorLeaseOverrides ──────────────────────────────────────────────
@@ -242,7 +247,7 @@ public class OverrideApplyToTests
     {
         var act = () => new ProcessorLeaseOverrides().ApplyTo(null!);
 
-        act.Should().Throw<ArgumentNullException>();
+        Assert.ThrowsAny<ArgumentNullException>(act);
     }
 
     [Fact]
@@ -251,7 +256,7 @@ public class OverrideApplyToTests
         var base_ = new ProcessorLeaseOptions { Enabled = true, ReplicaId = "pod-1" };
         var result = new ProcessorLeaseOverrides().ApplyTo(base_);
 
-        result.Should().Be(base_);
+        Assert.Equal(base_, result);
     }
 
     /// <summary>
@@ -264,7 +269,7 @@ public class OverrideApplyToTests
         var base_ = new ProcessorLeaseOptions { Enabled = false };
         var result = new ProcessorLeaseOverrides { Enabled = true }.ApplyTo(base_);
 
-        result.Enabled.Should().BeTrue();
+        Assert.True(result.Enabled);
     }
 
     [Fact]
@@ -273,7 +278,7 @@ public class OverrideApplyToTests
         var base_ = new ProcessorLeaseOptions { Enabled = true };
         var result = new ProcessorLeaseOverrides { Enabled = null }.ApplyTo(base_);
 
-        result.Enabled.Should().BeTrue();
+        Assert.True(result.Enabled);
     }
 
     /// <summary>
@@ -287,7 +292,7 @@ public class OverrideApplyToTests
         var base_ = new ProcessorLeaseOptions { ReplicaId = "pod-1" };
         var result = new ProcessorLeaseOverrides { ReplicaId = null }.ApplyTo(base_);
 
-        result.ReplicaId.Should().Be("pod-1");
+        Assert.Equal("pod-1", result.ReplicaId);
     }
 
     [Fact]
@@ -296,7 +301,7 @@ public class OverrideApplyToTests
         var base_ = new ProcessorLeaseOptions { ReplicaId = "pod-1" };
         var result = new ProcessorLeaseOverrides { ReplicaId = "pod-2" }.ApplyTo(base_);
 
-        result.ReplicaId.Should().Be("pod-2");
+        Assert.Equal("pod-2", result.ReplicaId);
     }
 
     [Fact]
@@ -305,7 +310,8 @@ public class OverrideApplyToTests
         var base_ = new ProcessorLeaseOptions { Enabled = true, ReplicaId = "pod-1" };
         var result = new ProcessorLeaseOverrides { Enabled = false }.ApplyTo(base_);
 
-        result.Enabled.Should().BeFalse();
-        result.ReplicaId.Should().Be("pod-1", "untouched");
+        Assert.False(result.Enabled);
+        // untouched
+        Assert.Equal("pod-1", result.ReplicaId);
     }
 }

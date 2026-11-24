@@ -4,7 +4,6 @@ using Alberto.Configuration;
 using Alberto.InMemory;
 using Alberto.Tests.SampleEvents;
 using Alberto.Upcasting;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -65,19 +64,19 @@ public class UpcasterConfigurationPathTests
 
         // Resolved from DI, not constructed — this is the assertion four waves of tests missed.
         var serializer = sp.GetKeyedService<EventSerializer>(ModuleKey);
-        serializer.Should().NotBeNull("WithEventsFrom must register the module's serializer");
+        // WithEventsFrom must register the module's serializer
+        Assert.NotNull(serializer);
 
         var evt = serializer!.Deserialize(StoredV1Event(orderId));
 
-        evt.Should().BeOfType<VersionedOrder>();
+        Assert.IsType<VersionedOrder>(evt);
         var order = (VersionedOrder)evt;
-        order.OrderId.Should().Be(orderId);
-        order.Amount.Should().Be(42.5m);
-        order.Country.Should().Be(
-            "unknown",
-            "the upcaster registered through AddUpcaster must run — anything else here means the "
-            + "configuration path built an upcaster-free serializer, which is exactly the defect "
-            + "that survived four rounds of green tests");
+        Assert.Equal(orderId, order.OrderId);
+        Assert.Equal(42.5m, order.Amount);
+        // the upcaster registered through AddUpcaster must run — anything else here means the
+        // configuration path built an upcaster-free serializer, which is exactly the defect that survived
+        // four rounds of green tests
+        Assert.Equal("unknown", order.Country);
     }
 
     [Fact]
@@ -94,7 +93,8 @@ public class UpcasterConfigurationPathTests
 
         var order = (VersionedOrder)serializer.Deserialize(stored);
 
-        order.Country.Should().Be("BE", "a v2 event must not be routed through the v1 step");
+        // a v2 event must not be routed through the v1 step
+        Assert.Equal("BE", order.Country);
     }
 
     [Fact]
@@ -111,8 +111,8 @@ public class UpcasterConfigurationPathTests
             1,
             JsonSerializer.Serialize(new { NoteId = noteId, Text = "hello" })));
 
-        note.NoteId.Should().Be(noteId);
-        note.Text.Should().Be("hello");
+        Assert.Equal(noteId, note.NoteId);
+        Assert.Equal("hello", note.Text);
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public class UpcasterConfigurationPathTests
 
         var order = (VersionedOrder)serializer.Deserialize(StoredV1Event(Guid.NewGuid()));
 
-        order.Country.Should().Be("unknown");
+        Assert.Equal("unknown", order.Country);
     }
 
     [Fact]
@@ -149,9 +149,9 @@ public class UpcasterConfigurationPathTests
 
         var act = () => sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(ModuleKey);
 
-        act.Should().Throw<OptionsValidationException>()
-            .Which.Failures.Should().ContainMatch("*ALB0018*",
-                "a Version = 2 event type with no upcaster must be rejected at startup");
+        var exception = Assert.ThrowsAny<OptionsValidationException>(act);
+        // a Version = 2 event type with no upcaster must be rejected at startup
+        Assert.Contains(exception.Failures, message => message.Contains("ALB0018", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -174,8 +174,8 @@ public class UpcasterConfigurationPathTests
 
         var act = () => sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(ModuleKey);
 
-        act.Should().Throw<OptionsValidationException>()
-            .Which.Failures.Should().ContainMatch("*ALB0019*");
+        var exception = Assert.ThrowsAny<OptionsValidationException>(act);
+        Assert.Contains(exception.Failures, message => message.Contains("ALB0019", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>An event as it comes back off the log: a slug, a version, and JSON.</summary>

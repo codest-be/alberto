@@ -1,7 +1,6 @@
 using System.Text;
 using Alberto.Postgres;
 using Alberto.Tests.Infrastructure;
-using FluentAssertions;
 using Npgsql;
 using Xunit;
 
@@ -38,12 +37,12 @@ public abstract class PostgresStateStoreBatchTests(NpgsqlDataSource dataSource, 
         var loaded = await store.LoadManyAsync(
             ["kept", "updated", "deleted", "both", "inserted", "new-and-gone", "never-existed"], ct);
 
-        loaded.Should().BeEquivalentTo(new Dictionary<string, Doc>
+        Assert.Equivalent(new Dictionary<string, Doc>
         {
             ["kept"] = new(1),
             ["updated"] = new(2),
             ["inserted"] = new(3),
-        });
+        }, loaded, strict: true);
     }
 
     [Fact]
@@ -66,7 +65,7 @@ public abstract class PostgresStateStoreBatchTests(NpgsqlDataSource dataSource, 
 
         var recent = await store.ListRecentAsync(10, ct);
 
-        recent.Select(d => d.Value).Should().Equal(Enumerable.Range(0, 10));
+        Assert.Equal(Enumerable.Range(0, 10), recent.Select(d => d.Value));
     }
 
     [Fact]
@@ -97,8 +96,9 @@ public abstract class PostgresStateStoreBatchTests(NpgsqlDataSource dataSource, 
             while (await reader.ReadAsync(ct))
                 plan.AppendLine(reader.GetString(0));
 
-        plan.ToString().Should().Contain("idx_alberto_projection_states_recent")
-            .And.NotContain("Sort", "the index already yields updated_at DESC within the version");
+        Assert.Contains("idx_alberto_projection_states_recent", plan.ToString());
+        // the index already yields updated_at DESC within the version
+        Assert.DoesNotContain("Sort", plan.ToString());
     }
 
     private async Task ExecuteAsync(string sql, CancellationToken ct)

@@ -3,7 +3,6 @@ using Alberto.Configuration;
 using Alberto.InMemory;
 using Alberto.Subscriptions;
 using Alberto.Telemetry;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Telemetry;
@@ -45,11 +44,11 @@ public sealed class ConsumePathTagTests
             context.ProcessorId,
             () => middleware(context, () => throw new InvalidOperationException("boom")));
 
-        TagValue(tags, "module").Should().Be("orders",
-            "the logical module key must be stripped of the shard suffix");
-        TagValue(tags, "shard").Should().Be("eu",
-            "the shard id must appear as a separate tag, not embedded in the module tag");
-        TagValue(tags, "processor").Should().Be(context.ProcessorId);
+        // the logical module key must be stripped of the shard suffix
+        Assert.Equal("orders", TagValue(tags, "module"));
+        // the shard id must appear as a separate tag, not embedded in the module tag
+        Assert.Equal("eu", TagValue(tags, "shard"));
+        Assert.Equal(context.ProcessorId, TagValue(tags, "processor"));
     }
 
     [Fact]
@@ -67,9 +66,8 @@ public sealed class ConsumePathTagTests
             context.ProcessorId,
             () => middleware(context, () => throw new InvalidOperationException("boom")));
 
-        TagValue(tags, "module").Should().Be("orders");
-        tags.Any(t => t.Key == "shard").Should().BeFalse(
-            "an unsharded module must not emit a shard tag");
+        Assert.Equal("orders", TagValue(tags, "module"));
+        Assert.False(tags.Any(t => t.Key == "shard"), "an unsharded module must not emit a shard tag");
     }
 
     // ── alberto.dead_letters — BatchConsumeMiddlewares ────────────────────────
@@ -89,9 +87,9 @@ public sealed class ConsumePathTagTests
             context.ProcessorId,
             () => middleware(context, () => throw new InvalidOperationException("boom")));
 
-        TagValue(tags, "module").Should().Be("orders");
-        TagValue(tags, "shard").Should().Be("eu");
-        TagValue(tags, "processor").Should().Be(context.ProcessorId);
+        Assert.Equal("orders", TagValue(tags, "module"));
+        Assert.Equal("eu", TagValue(tags, "shard"));
+        Assert.Equal(context.ProcessorId, TagValue(tags, "processor"));
     }
 
     // ── alberto.retries — RetryAndDeadLetterCore ──────────────────────────────
@@ -123,9 +121,9 @@ public sealed class ConsumePathTagTests
                 return Task.CompletedTask;
             }));
 
-        TagValue(tags, "module").Should().Be("orders");
-        TagValue(tags, "shard").Should().Be("eu");
-        TagValue(tags, "processor").Should().Be(context.ProcessorId);
+        Assert.Equal("orders", TagValue(tags, "module"));
+        Assert.Equal("eu", TagValue(tags, "shard"));
+        Assert.Equal(context.ProcessorId, TagValue(tags, "processor"));
     }
 
     [Fact]
@@ -153,9 +151,8 @@ public sealed class ConsumePathTagTests
                 return Task.CompletedTask;
             }));
 
-        TagValue(tags, "module").Should().Be("orders");
-        tags.Any(t => t.Key == "shard").Should().BeFalse(
-            "an unsharded module must not emit a shard tag");
+        Assert.Equal("orders", TagValue(tags, "module"));
+        Assert.False(tags.Any(t => t.Key == "shard"), "an unsharded module must not emit a shard tag");
     }
 
     // ── alberto.processor.lag ─────────────────────────────────────────────────
@@ -173,12 +170,13 @@ public sealed class ConsumePathTagTests
             .Where(m => TagValue(m.Tags, "processor") == processorId)
             .ToList();
 
-        match.Should().ContainSingle("exactly one measurement for this processor");
-        TagValue(match[0].Tags, "module").Should().Be("orders",
-            "the logical module key must be stripped of the shard suffix");
-        TagValue(match[0].Tags, "shard").Should().Be("eu",
-            "the shard id must appear as a separate tag");
-        match[0].Value.Should().Be(5);
+        // exactly one measurement for this processor
+        Assert.Single(match);
+        // the logical module key must be stripped of the shard suffix
+        Assert.Equal("orders", TagValue(match[0].Tags, "module"));
+        // the shard id must appear as a separate tag
+        Assert.Equal("eu", TagValue(match[0].Tags, "shard"));
+        Assert.Equal(5, match[0].Value);
     }
 
     [Fact]
@@ -204,14 +202,16 @@ public sealed class ConsumePathTagTests
                      && TagValue(m.Tags, "shard") == "us")
             .ToList();
 
-        forEu.Should().ContainSingle("orders#eu must have its own lag entry");
-        forUs.Should().ContainSingle("orders#us must have its own lag entry");
-        forEu[0].Value.Should().Be(10);
-        forUs[0].Value.Should().Be(20);
+        // orders#eu must have its own lag entry
+        Assert.Single(forEu);
+        // orders#us must have its own lag entry
+        Assert.Single(forUs);
+        Assert.Equal(10, forEu[0].Value);
+        Assert.Equal(20, forUs[0].Value);
 
         // Both entries carry the logical module name, not the composite key.
-        TagValue(forEu[0].Tags, "module").Should().Be("orders");
-        TagValue(forUs[0].Tags, "module").Should().Be("orders");
+        Assert.Equal("orders", TagValue(forEu[0].Tags, "module"));
+        Assert.Equal("orders", TagValue(forUs[0].Tags, "module"));
     }
 
     [Fact]
@@ -226,10 +226,9 @@ public sealed class ConsumePathTagTests
             .Where(m => TagValue(m.Tags, "processor") == processorId)
             .ToList();
 
-        match.Should().ContainSingle();
-        TagValue(match[0].Tags, "module").Should().Be("orders");
-        match[0].Tags.Any(t => t.Key == "shard").Should().BeFalse(
-            "an unsharded module must not emit a shard tag");
+        Assert.Single(match);
+        Assert.Equal("orders", TagValue(match[0].Tags, "module"));
+        Assert.False(match[0].Tags.Any(t => t.Key == "shard"), "an unsharded module must not emit a shard tag");
     }
 
     // ── listener isolation ────────────────────────────────────────────────────
@@ -255,10 +254,10 @@ public sealed class ConsumePathTagTests
                 await middleware(context, () => throw new InvalidOperationException("boom"));
             });
 
-        TagValue(tags, "processor").Should().Be(context.ProcessorId,
-            "the capture must correlate to this test's own measurement");
-        TagValue(tags, "shard").Should().Be("eu",
-            "capturing a concurrent unsharded test's measurement would read shard as null");
+        // the capture must correlate to this test's own measurement
+        Assert.Equal(context.ProcessorId, TagValue(tags, "processor"));
+        // capturing a concurrent unsharded test's measurement would read shard as null
+        Assert.Equal("eu", TagValue(tags, "shard"));
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
@@ -328,8 +327,7 @@ public sealed class ConsumePathTagTests
 
         lock (gate)
         {
-            captured.Should().NotBeNull(
-                $"expected at least one measurement on {instrumentName} tagged with processor '{processorId}' but none were recorded");
+            Assert.NotNull(captured);
             return captured!.Value;
         }
     }

@@ -1,5 +1,4 @@
 using Alberto.Checkpoints;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Subscriptions;
@@ -30,12 +29,12 @@ public class CachingCheckpointStoreBatchTests
 
         await cache.SaveAsync("p", 20, Ct);
 
-        inner.RoundTrips.Should().Be(1, because: "reset detection is folded into the fenced write");
-        inner.Gets.Should().Be(0);
-        inner.LastWrites.Should().ContainSingle()
-            .Which.Should().Be(new CheckpointWrite("p", 20, Floor: 10, FenceToken: 7));
-        inner.LastFencing.Should().NotBeNull();
-        inner.Stored("p").Should().Be(20);
+        // reset detection is folded into the fenced write
+        Assert.Equal(1, inner.RoundTrips);
+        Assert.Equal(0, inner.Gets);
+        Assert.Equal(new CheckpointWrite("p", 20, Floor: 10, FenceToken: 7), Assert.Single(inner.LastWrites));
+        Assert.NotNull(inner.LastFencing);
+        Assert.Equal(20, inner.Stored("p"));
     }
 
     [Fact]
@@ -48,10 +47,10 @@ public class CachingCheckpointStoreBatchTests
             await cache.SaveAsync($"p{i}", 100 + i, Ct);
         await cache.FlushAsync(Ct);
 
-        inner.RoundTrips.Should().Be(1);
-        inner.LastWrites.Should().HaveCount(5);
-        inner.LastFencing.Should().BeNull();
-        inner.Stored("p3").Should().Be(103);
+        Assert.Equal(1, inner.RoundTrips);
+        Assert.Equal(5, inner.LastWrites.Count());
+        Assert.Null(inner.LastFencing);
+        Assert.Equal(103, inner.Stored("p3"));
     }
 
     [Fact]
@@ -68,13 +67,13 @@ public class CachingCheckpointStoreBatchTests
 
         await cache.SaveAsync("p", 150, Ct);
 
-        (await cache.GetAsync("p", Ct)).Should().Be(40);
-        violations.Should().Be(0);
+        Assert.Equal(40, await cache.GetAsync("p", Ct));
+        Assert.Equal(0, violations);
 
         // The pending write was dropped, not kept for the next flush.
         inner.Reset();
         await cache.FlushAsync(Ct);
-        inner.RoundTrips.Should().Be(0);
+        Assert.Equal(0, inner.RoundTrips);
     }
 
     [Fact]
@@ -91,8 +90,9 @@ public class CachingCheckpointStoreBatchTests
 
         await cache.SaveAsync("p", 150, Ct);
 
-        violated.Should().Be("p");
-        (await cache.GetAsync("p", Ct)).Should().Be(100, because: "the cache re-reads the store");
+        Assert.Equal("p", violated);
+        // the cache re-reads the store
+        Assert.Equal(100, await cache.GetAsync("p", Ct));
     }
 
     [Fact]
@@ -104,11 +104,11 @@ public class CachingCheckpointStoreBatchTests
 
         await cache.SaveAsync("p", 100, Ct);
         await cache.FlushAsync(Ct);
-        inner.Stored("p").Should().BeNull();
+        Assert.Null(inner.Stored("p"));
 
         inner.Outcome = null;
         await cache.FlushAsync(Ct);
-        inner.Stored("p").Should().Be(100);
+        Assert.Equal(100, inner.Stored("p"));
     }
 
     [Fact]
@@ -124,9 +124,9 @@ public class CachingCheckpointStoreBatchTests
         inner.Reset();
         await cache.ResyncFromStoreAsync(Ct);
 
-        inner.Gets.Should().Be(1);
-        (await cache.GetAsync("p1", Ct)).Should().Be(30);
-        (await cache.GetAsync("p0", Ct)).Should().Be(100);
+        Assert.Equal(1, inner.Gets);
+        Assert.Equal(30, await cache.GetAsync("p1", Ct));
+        Assert.Equal(100, await cache.GetAsync("p0", Ct));
     }
 
     [Fact]
@@ -141,10 +141,10 @@ public class CachingCheckpointStoreBatchTests
         var slow = cache.SaveAsync("slow", 1, Ct);
         await cache.SaveAsync("fast", 1, Ct).WaitAsync(TimeSpan.FromSeconds(5), Ct);
 
-        slow.IsCompleted.Should().BeFalse();
+        Assert.False(slow.IsCompleted);
         blocked.SetResult();
         await slow;
-        inner.Stored("slow").Should().Be(1);
+        Assert.Equal(1, inner.Stored("slow"));
     }
 
     private sealed class BatchStore : ICheckpointStore, ICheckpointBatchStore

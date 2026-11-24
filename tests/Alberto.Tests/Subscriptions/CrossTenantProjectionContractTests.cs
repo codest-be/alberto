@@ -1,7 +1,6 @@
 using Alberto.Postgres;
 using Alberto.Tenancy;
 using Alberto.Tests.Infrastructure;
-using FluentAssertions;
 using Npgsql;
 using Xunit;
 
@@ -79,9 +78,9 @@ public sealed class CrossTenantProjectionContractTests(SingleTenantPostgresFixtu
         var reader = new PostgresStateStore<SimpleState>(fixture.DataSource, projectionType);
         var result = await reader.LoadManyAsync([docId], Ct);
 
-        result.Should().ContainKey(docId,
-            "a cross-tenant reader must see what the cross-tenant writer stored");
-        result[docId].Value.Should().Be(42);
+        // a cross-tenant reader must see what the cross-tenant writer stored
+        Assert.Contains(docId, result);
+        Assert.Equal(42, result[docId].Value);
     }
 
     /// <summary>
@@ -115,10 +114,9 @@ public sealed class CrossTenantProjectionContractTests(SingleTenantPostgresFixtu
         // would also be satisfied by an unrelated ArgumentException and would stop
         // detecting the writer/reader schema disagreement this test exists to guard.
         var act = () => reader.LoadManyAsync([docId], Ct);
-        await act.Should().ThrowAsync<PostgresException>(
-                "a multi-tenant reader on a single-tenant schema must fail fast")
-            .Where(e => e.SqlState == "42703",
-                "the failure must be the missing tenant_id column (undefined_column)");
+        // a multi-tenant reader on a single-tenant schema must fail fast
+        var exception = await Assert.ThrowsAnyAsync<PostgresException>(act);
+        Assert.True(exception.SqlState == "42703", "the failure must be the missing tenant_id column (undefined_column)");
     }
 }
 
@@ -166,10 +164,9 @@ public sealed class CrossTenantProjectionOnMultiTenantSchemaTests(MultiTenantDbF
         var act = () => writer.ApplyChangesAsync(
             new Dictionary<string, SimpleState> { ["overview"] = new() { Value = 1 } }, [], Ct);
 
-        await act.Should().ThrowAsync<PostgresException>(
-                "a tenant-less store cannot write to a tenant-keyed table")
-            .Where(e => e.SqlState == "42P10",
-                "the ON CONFLICT target it names is not a constraint on this schema");
+        // a tenant-less store cannot write to a tenant-keyed table
+        var exception = await Assert.ThrowsAnyAsync<PostgresException>(act);
+        Assert.True(exception.SqlState == "42P10", "the ON CONFLICT target it names is not a constraint on this schema");
     }
 
     /// <summary>
@@ -191,13 +188,13 @@ public sealed class CrossTenantProjectionOnMultiTenantSchemaTests(MultiTenantDbF
             fixture.DataSource, projectionType, tenantId: TenantScope.CrossTenant);
         var found = await reader.LoadManyAsync([docId], Ct);
 
-        found.Should().ContainKey(docId);
-        found[docId].Value.Should().Be(42);
+        Assert.Contains(docId, found);
+        Assert.Equal(42, found[docId].Value);
 
         var tenantReader = new PostgresStateStore<SimpleState>(
             fixture.DataSource, projectionType, tenantId: $"tenant-{_id}");
-        (await tenantReader.LoadManyAsync([docId], Ct)).Should().BeEmpty(
-            "the blended document belongs to the sentinel, not to any one tenant");
+        // the blended document belongs to the sentinel, not to any one tenant
+        Assert.Empty((await tenantReader.LoadManyAsync([docId], Ct)));
     }
 
     /// <summary>
@@ -209,8 +206,8 @@ public sealed class CrossTenantProjectionOnMultiTenantSchemaTests(MultiTenantDbF
     [Fact]
     public void CrossTenantFor_MapsNullToNull_AndAnyTenantToTheSentinel()
     {
-        TenantScope.CrossTenantFor(null).Should().BeNull();
-        TenantScope.CrossTenantFor("acme").Should().Be(TenantScope.CrossTenant);
-        TenantScope.CrossTenantFor(TenantScope.CrossTenant).Should().Be(TenantScope.CrossTenant);
+        Assert.Null(TenantScope.CrossTenantFor(null));
+        Assert.Equal(TenantScope.CrossTenant, TenantScope.CrossTenantFor("acme"));
+        Assert.Equal(TenantScope.CrossTenant, TenantScope.CrossTenantFor(TenantScope.CrossTenant));
     }
 }

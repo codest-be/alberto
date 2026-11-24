@@ -4,7 +4,6 @@ using Alberto.Configuration;
 using Alberto.InMemory;
 using Alberto.DeadLetters;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -141,12 +140,14 @@ public sealed class ControlLoopAssemblerTests
         await head.StopAsync(cancellationToken);
 
         // Both loops processed the event.
-        liveProcessor.ProcessedValues.Should().ContainSingle("hello");
-        shadowProcessor.ProcessedValues.Should().ContainSingle("hello");
+        // hello
+        Assert.Single(liveProcessor.ProcessedValues);
+        // hello
+        Assert.Single(shadowProcessor.ProcessedValues);
 
         // Both execution logs have the same shape: [before, after].
-        liveLog.Should().BeEquivalentTo(shadowLog,
-            "middleware must execute in the same order for live and shadow loops");
+        // middleware must execute in the same order for live and shadow loops
+        Assert.Equivalent(shadowLog, liveLog, strict: true);
     }
 
     /// <summary>
@@ -208,10 +209,9 @@ public sealed class ControlLoopAssemblerTests
         await loop.StopAsync(cancellationToken);
         await head.StopAsync(cancellationToken);
 
-        perEventCallCount.Should().BeGreaterThan(0,
-            "per-event dispatch must be used when there are unpaired per-event middlewares");
-        batchCallCount.Should().Be(0,
-            "batch dispatch must not be used when per-event middlewares have no batch counterpart");
+        Assert.True(perEventCallCount > 0, "per-event dispatch must be used when there are unpaired per-event middlewares");
+        // batch dispatch must not be used when per-event middlewares have no batch counterpart
+        Assert.Equal(0, batchCallCount);
     }
 
     /// <summary>
@@ -270,9 +270,8 @@ public sealed class ControlLoopAssemblerTests
         await loop.StopAsync(cancellationToken);
         await head.StopAsync(cancellationToken);
 
-        entries.Should().ContainSingle()
-            .Which.FailedAt.Should().Be(fixedInstant,
-                "FailedAt must come from the FakeTimeProvider flowing through the assembler");
+        // FailedAt must come from the FakeTimeProvider flowing through the assembler
+        Assert.Equal(fixedInstant, Assert.Single(entries).FailedAt);
     }
 
     private sealed class AlwaysFailingProcessor(string processorId) : IEventProcessor
@@ -343,6 +342,6 @@ public sealed class ControlLoopAssemblerTests
             new EventStoreHead(backend, TimeSpan.FromMilliseconds(20)), backend, new InMemoryFencedCheckpointStore(),
             pollingInterval: TimeSpan.FromMilliseconds(10), batchSize: 100, moduleKey: "test");
 
-        create.Should().NotThrow();
+        create();
     }
 }

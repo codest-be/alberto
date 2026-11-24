@@ -1,5 +1,4 @@
 using Alberto.Benchmarks.Core;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Benchmarks;
@@ -36,7 +35,7 @@ public class BdnImporterTests
     [Fact]
     public void Every_benchmark_becomes_a_measurement()
     {
-        BdnImporter.Import(ReportJson, Metadata).Measurements.Should().HaveCount(2);
+        Assert.Equal(2, BdnImporter.Import(ReportJson, Metadata).Measurements.Count());
     }
 
     [Fact]
@@ -44,7 +43,7 @@ public class BdnImporterTests
     {
         var run = BdnImporter.Import(ReportJson, Metadata);
 
-        run.Measurements[0].Id.Should().Be("AppendBenchmarks.BatchAppend");
+        Assert.Equal("AppendBenchmarks.BatchAppend", run.Measurements[0].Id);
     }
 
     [Fact]
@@ -52,15 +51,15 @@ public class BdnImporterTests
     {
         var measurement = BdnImporter.Import(ReportJson, Metadata).Measurements[0];
 
-        measurement.Params.Should().HaveCount(2);
-        measurement.Params["BatchSize"].Should().Be("100");
-        measurement.Params["StoreSize"].Should().Be("10000");
+        Assert.Equal(2, measurement.Params.Count());
+        Assert.Equal("100", measurement.Params["BatchSize"]);
+        Assert.Equal("10000", measurement.Params["StoreSize"]);
     }
 
     [Fact]
     public void An_empty_parameter_string_yields_no_parameters()
     {
-        BdnImporter.Import(ReportJson, Metadata).Measurements[1].Params.Should().BeEmpty();
+        Assert.Empty(BdnImporter.Import(ReportJson, Metadata).Measurements[1].Params);
     }
 
     [Fact]
@@ -68,9 +67,9 @@ public class BdnImporterTests
     {
         var measurement = BdnImporter.Import(ReportJson, Metadata).Measurements[0];
 
-        measurement.MeanNs.Should().Be(125000.5);
-        measurement.StdDevNs.Should().Be(4200.25);
-        measurement.AllocatedBytes.Should().Be(8192);
+        Assert.Equal(125000.5, measurement.MeanNs);
+        Assert.Equal(4200.25, measurement.StdDevNs);
+        Assert.Equal(8192, measurement.AllocatedBytes);
     }
 
     [Fact]
@@ -79,7 +78,7 @@ public class BdnImporterTests
         var measurement = BdnImporter.Import(ReportJson, Metadata).Measurements[1];
 
         // 2000 ns per op => 500,000 ops/sec
-        measurement.OpsPerSec.Should().BeApproximately(500_000.0, 0.01);
+        Assert.InRange(measurement.OpsPerSec, 500_000.0 - 0.01, 500_000.0 + 0.01);
     }
 
     [Fact]
@@ -87,8 +86,8 @@ public class BdnImporterTests
     {
         var act = () => BdnImporter.Import("""{ "Benchmarks": [] }""", Metadata);
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*no benchmarks*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        Assert.Contains("no benchmarks", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     // A run over several benchmark classes writes one report per class, so a full nightly
@@ -114,9 +113,9 @@ public class BdnImporterTests
     {
         var run = BdnImporter.ImportMany([ReportJson, SecondReportJson], Metadata);
 
-        run.Measurements.Should().HaveCount(3);
-        run.Measurements.Should().Contain(m => m.Id == "QueryBenchmarks.TailRead");
-        run.Measurements.Should().Contain(m => m.Id == "AppendBenchmarks.SingleAppend");
+        Assert.Equal(3, run.Measurements.Count());
+        Assert.Contains(run.Measurements, m => m.Id == "QueryBenchmarks.TailRead");
+        Assert.Contains(run.Measurements, m => m.Id == "AppendBenchmarks.SingleAppend");
     }
 
     [Fact]
@@ -126,8 +125,8 @@ public class BdnImporterTests
         // drop a benchmark from the baseline.
         var act = () => BdnImporter.ImportMany([ReportJson, ReportJson], Metadata);
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Duplicate*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        Assert.Contains("Duplicate", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -135,7 +134,7 @@ public class BdnImporterTests
     {
         var act = () => BdnImporter.ImportMany([], Metadata);
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*no benchmarks*");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        Assert.Contains("no benchmarks", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 }

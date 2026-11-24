@@ -1,5 +1,4 @@
 using Alberto.Upcasting;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests;
@@ -79,10 +78,10 @@ public sealed class EvolverPublicApiUpcastingTests
         var act = () => evolver.Reconstitute(envelopes);
 
         // Assert: must throw, not silently return wrong state.
-        act.Should().ThrowExactly<InvalidOperationException>()
-            .WithMessage("*schema version 1*")
-            .And.Message.Should().Contain("version 2",
-                "the error must state both the stored version and the expected version");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+        Assert.Contains("schema version 1", exception.Message, StringComparison.OrdinalIgnoreCase);
+        // the error must state both the stored version and the expected version
+        Assert.Contains("version 2", exception.Message);
     }
 
     [Fact]
@@ -98,9 +97,9 @@ public sealed class EvolverPublicApiUpcastingTests
 
         var act = () => evolver.Reconstitute(envelopes);
 
-        act.Should().ThrowExactly<InvalidOperationException>()
-            .WithMessage("*EventSerializer*",
-                "the error must name the serializer-threaded alternative so the caller knows the correct fix");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+        // the error must name the serializer-threaded alternative so the caller knows the correct fix
+        Assert.Contains("EventSerializer", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -118,7 +117,7 @@ public sealed class EvolverPublicApiUpcastingTests
 
         var state = evolver.Reconstitute(envelopes);
 
-        state.LastRegion.Should().Be("direct");
+        Assert.Equal("direct", state.LastRegion);
     }
 
     [Fact]
@@ -132,8 +131,8 @@ public sealed class EvolverPublicApiUpcastingTests
 
         var act = () => evolver.Evolve(new PublicApiOrderState(), staleEnvelope);
 
-        act.Should().ThrowExactly<InvalidOperationException>()
-            .WithMessage("*schema version 1*");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+        Assert.Contains("schema version 1", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -162,7 +161,7 @@ public sealed class EvolverPublicApiUpcastingTests
         // because it supplies a non-null deserializer.
         var state = evolver.Reconstitute(envelopes, initial: default, serializer.Deserialize);
 
-        state.LastRegion.Should().Be("via-upcaster",
-            "the serializer-threaded overload must apply the upcaster chain correctly");
+        // the serializer-threaded overload must apply the upcaster chain correctly
+        Assert.Equal("via-upcaster", state.LastRegion);
     }
 }

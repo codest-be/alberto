@@ -1,5 +1,4 @@
 using Alberto.Benchmarks.Core;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests.Benchmarks;
@@ -19,7 +18,7 @@ public class BenchmarkRunTests
     {
         var measurement = Measure("Append.Batch", ("BatchSize", "100"), ("StoreSize", "10000"));
 
-        measurement.Key.Should().Be("Append.Batch[BatchSize=100,StoreSize=10000]");
+        Assert.Equal("Append.Batch[BatchSize=100,StoreSize=10000]", measurement.Key);
     }
 
     [Fact]
@@ -28,13 +27,13 @@ public class BenchmarkRunTests
         var forward = Measure("Append.Batch", ("BatchSize", "100"), ("StoreSize", "10000"));
         var reversed = Measure("Append.Batch", ("StoreSize", "10000"), ("BatchSize", "100"));
 
-        forward.Key.Should().Be(reversed.Key);
+        Assert.Equal(reversed.Key, forward.Key);
     }
 
     [Fact]
     public void A_measurement_without_parameters_keys_on_its_id_alone()
     {
-        Measure("Query.StreamAll").Key.Should().Be("Query.StreamAll");
+        Assert.Equal("Query.StreamAll", Measure("Query.StreamAll").Key);
     }
 
     [Fact]
@@ -47,12 +46,12 @@ public class BenchmarkRunTests
 
         var restored = BenchmarkRun.FromJson(original.ToJson());
 
-        restored.SchemaVersion.Should().Be(1);
-        restored.Run.ProfileId.Should().Be("ci-3f2a91b8");
-        restored.Run.GitSha.Should().Be("a1b2c3d");
-        restored.Measurements.Should().HaveCount(2);
-        restored.Measurements[0].MeanNs.Should().Be(1200.0);
-        restored.Measurements[0].AllocatedBytes.Should().Be(512);
+        Assert.Equal(1, restored.SchemaVersion);
+        Assert.Equal("ci-3f2a91b8", restored.Run.ProfileId);
+        Assert.Equal("a1b2c3d", restored.Run.GitSha);
+        Assert.Equal(2, restored.Measurements.Count());
+        Assert.Equal(1200.0, restored.Measurements[0].MeanNs);
+        Assert.Equal(512, restored.Measurements[0].AllocatedBytes);
     }
 
     [Fact]
@@ -63,6 +62,6 @@ public class BenchmarkRunTests
             Run: new RunMetadata("2026-07-26T02:12:00Z", "a1b2c3d", "ci-3f2a91b8", "0.1.0"),
             Measurements: [Measure("Append.Single")]);
 
-        run.ToJson().Should().Contain("\n  ");
+        Assert.Contains("\n  ", run.ToJson());
     }
 }

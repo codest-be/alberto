@@ -3,7 +3,6 @@ using Alberto;
 using Alberto.Configuration;
 using Alberto.InMemory;
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -86,10 +85,10 @@ public sealed class ReactToRegistrationTests
             "reactor_a",
             ReactorMode.Sync));
 
-        SyncHandlers(sp).Should().ContainSingle(
-            "a Sync reactor must register IPostAppendHandler so it runs during AppendAsync");
-        AsyncProcessors(sp).Should().BeEmpty(
-            "sync mode must not register an IEventProcessor");
+        // a Sync reactor must register IPostAppendHandler so it runs during AppendAsync
+        Assert.Single(SyncHandlers(sp));
+        // sync mode must not register an IEventProcessor
+        Assert.Empty(AsyncProcessors(sp));
     }
 
     // ── Overload 2: factory(IServiceProvider) → Func<TEvent, ReactorContext, CancellationToken, Task>
@@ -102,10 +101,10 @@ public sealed class ReactToRegistrationTests
             "reactor_b",
             ReactorMode.Sync));
 
-        SyncHandlers(sp).Should().ContainSingle(
-            "a Sync reactor must register IPostAppendHandler so it runs during AppendAsync");
-        AsyncProcessors(sp).Should().BeEmpty(
-            "sync mode must not register an IEventProcessor");
+        // a Sync reactor must register IPostAppendHandler so it runs during AppendAsync
+        Assert.Single(SyncHandlers(sp));
+        // sync mode must not register an IEventProcessor
+        Assert.Empty(AsyncProcessors(sp));
     }
 
     [Fact]
@@ -115,10 +114,10 @@ public sealed class ReactToRegistrationTests
             _ => (e, ctx, cancellationToken) => Task.CompletedTask,
             "reactor_c")); // default: ReactorMode.Async
 
-        AsyncProcessors(sp).Should().ContainSingle(
-            "an Async reactor must register IEventProcessor for background polling");
-        SyncHandlers(sp).Should().BeEmpty(
-            "async mode must not register IPostAppendHandler");
+        // an Async reactor must register IEventProcessor for background polling
+        Assert.Single(AsyncProcessors(sp));
+        // async mode must not register IPostAppendHandler
+        Assert.Empty(SyncHandlers(sp));
     }
 
     // ── Overload 3: typed handler, no context (Func<TEvent, CancellationToken, Task>) ────────
@@ -130,10 +129,10 @@ public sealed class ReactToRegistrationTests
             h => h.HandleAsync,
             mode: ReactorMode.Sync));
 
-        SyncHandlers(sp).Should().ContainSingle(
-            "a Sync reactor must register IPostAppendHandler so it runs during AppendAsync");
-        AsyncProcessors(sp).Should().BeEmpty(
-            "sync mode must not register an IEventProcessor");
+        // a Sync reactor must register IPostAppendHandler so it runs during AppendAsync
+        Assert.Single(SyncHandlers(sp));
+        // sync mode must not register an IEventProcessor
+        Assert.Empty(AsyncProcessors(sp));
     }
 
     // ── Overload 4 (L428-498): typed handler, with ReactorContext ────────────────────────────
@@ -144,10 +143,10 @@ public sealed class ReactToRegistrationTests
         var sp = BuildModule(m => m.ReactTo<ReactRegEvent, ContextReactHandler>(
             h => h.HandleAsync)); // default: ReactorMode.Async
 
-        AsyncProcessors(sp).Should().ContainSingle(
-            "an Async reactor must register IEventProcessor for background polling");
-        SyncHandlers(sp).Should().BeEmpty(
-            "async mode must not register IPostAppendHandler");
+        // an Async reactor must register IEventProcessor for background polling
+        Assert.Single(AsyncProcessors(sp));
+        // async mode must not register IPostAppendHandler
+        Assert.Empty(SyncHandlers(sp));
     }
 
     [Fact]
@@ -157,10 +156,10 @@ public sealed class ReactToRegistrationTests
             h => h.HandleAsync,
             mode: ReactorMode.Sync));
 
-        SyncHandlers(sp).Should().ContainSingle(
-            "a Sync reactor must register IPostAppendHandler so it runs during AppendAsync");
-        AsyncProcessors(sp).Should().BeEmpty(
-            "sync mode must not register an IEventProcessor");
+        // a Sync reactor must register IPostAppendHandler so it runs during AppendAsync
+        Assert.Single(SyncHandlers(sp));
+        // sync mode must not register an IEventProcessor
+        Assert.Empty(AsyncProcessors(sp));
     }
 
     // ── L779: ValidateSyncExecutionOptions throw (via typed-context overload) ─────────────────
@@ -173,9 +172,9 @@ public sealed class ReactToRegistrationTests
             mode: ReactorMode.Sync,
             configure: o => o with { BatchingMode = ProcessorBatchingMode.IfSupported }));
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Sync*batching*",
-                "a Sync reactor cannot enable async batching");
+        var exception = Assert.ThrowsAny<InvalidOperationException>(act);
+        // a Sync reactor cannot enable async batching
+        Assert.Matches("(?is)Sync.*batching", exception.Message);
     }
 
     // ── L890: ValidateProcessorIdArg names the handler type in the error (context overload) ──
@@ -190,10 +189,10 @@ public sealed class ReactToRegistrationTests
         var act = () => BuildModule(m => m.ReactTo<ReactRegEvent, HandlerWithReservedProcessorId>(
             h => h.HandleAsync));
 
-        act.Should().Throw<ArgumentException>()
-            .WithParameterName("processorId")
-            .And.Message.Should().Contain(nameof(HandlerWithReservedProcessorId),
-                "the error must name the handler type so the user can fix the [ProcessorId] attribute");
+        var exception = Assert.ThrowsAny<ArgumentException>(act);
+        Assert.Equal("processorId", exception.ParamName);
+        // the error must name the handler type so the user can fix the [ProcessorId] attribute
+        Assert.Contains(nameof(HandlerWithReservedProcessorId), exception.Message);
     }
 
     // ── End-to-end: sync reactor is invoked during AppendAsync ───────────────────────────────
@@ -213,7 +212,8 @@ public sealed class ReactToRegistrationTests
 
         await store.AppendAsync([evt], cancellationToken: TestContext.Current.CancellationToken);
 
-        invoked.Should().Be(1, "the sync reactor must be called inline during AppendAsync");
+        // the sync reactor must be called inline during AppendAsync
+        Assert.Equal(1, invoked);
     }
 
     private static EventToPersist CreateEvent<TEvent>(TEvent payload) where TEvent : IEvent

@@ -3,7 +3,6 @@ using Alberto.EntityFramework;
 using Alberto.EntityFramework.Inline;
 using Alberto.Postgres;
 using Alberto.Projections;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -41,11 +40,11 @@ public sealed class EfInlineProjectionOwnedGraphTests(EfEventStoreFixture fixtur
         await store.AppendAsync([Moved(shelfId, "Bruges", "c")], cancellationToken: cancellationToken);
 
         var shelf = await ReadShelfAsync(shelfId);
-        shelf.Should().NotBeNull();
-        shelf!.Label.Should().Be("shelf", "scalars the event did not touch survive");
-        shelf.Address.City.Should().Be("Bruges");
-        shelf.Items.Select(i => i.Sku).Should().Equal("c");
-        (await CountItemRowsAsync(shelfId)).Should().Be(1, "the replaced items are deleted, not orphaned");
+        Assert.NotNull(shelf);
+        Assert.Equal("shelf", shelf!.Label);
+        Assert.Equal("Bruges", shelf.Address.City);
+        Assert.Equal(new[] { "c" }, shelf.Items.Select(i => i.Sku));
+        Assert.Equal(1, await CountItemRowsAsync(shelfId));
     }
 
     [Fact]
@@ -58,8 +57,8 @@ public sealed class EfInlineProjectionOwnedGraphTests(EfEventStoreFixture fixtur
 
         await store.AppendAsync([Removed(shelfId)], cancellationToken: cancellationToken);
 
-        (await ReadShelfAsync(shelfId)).Should().BeNull();
-        (await CountItemRowsAsync(shelfId)).Should().Be(0);
+        Assert.Null(await ReadShelfAsync(shelfId));
+        Assert.Equal(0, await CountItemRowsAsync(shelfId));
     }
 
     [Fact]
@@ -72,8 +71,8 @@ public sealed class EfInlineProjectionOwnedGraphTests(EfEventStoreFixture fixtur
         await store.AppendAsync(
             [Stocked(shelfId, "Ghent", "a"), Removed(shelfId)], cancellationToken: cancellationToken);
 
-        (await ReadShelfAsync(shelfId)).Should().BeNull();
-        (await CountItemRowsAsync(shelfId)).Should().Be(0);
+        Assert.Null(await ReadShelfAsync(shelfId));
+        Assert.Equal(0, await CountItemRowsAsync(shelfId));
     }
 
     [Fact]
@@ -88,9 +87,9 @@ public sealed class EfInlineProjectionOwnedGraphTests(EfEventStoreFixture fixtur
             [Removed(shelfId), Stocked(shelfId, "Bruges", "z")], cancellationToken: cancellationToken);
 
         var shelf = await ReadShelfAsync(shelfId);
-        shelf!.Address.City.Should().Be("Bruges");
-        shelf.Items.Select(i => i.Sku).Should().Equal("z");
-        (await CountItemRowsAsync(shelfId)).Should().Be(1);
+        Assert.Equal("Bruges", shelf!.Address.City);
+        Assert.Equal(new[] { "z" }, shelf.Items.Select(i => i.Sku));
+        Assert.Equal(1, await CountItemRowsAsync(shelfId));
     }
 
     [Fact]
@@ -104,8 +103,8 @@ public sealed class EfInlineProjectionOwnedGraphTests(EfEventStoreFixture fixtur
         await projection.ProcessAsync([Envelope(new ShelfStocked(shelfId, "shelf", "Ghent", ["a", "b"]), 1)], AppendTransaction.None, cancellationToken);
         await projection.ProcessAsync([Envelope(new ShelfMoved(shelfId, "Bruges", ["c"]), 2)], AppendTransaction.None, cancellationToken);
 
-        (await ReadShelfAsync(shelfId))!.Items.Select(i => i.Sku).Should().Equal("c");
-        (await CountItemRowsAsync(shelfId)).Should().Be(1);
+        Assert.Equal(new[] { "c" }, (await ReadShelfAsync(shelfId))!.Items.Select(i => i.Sku));
+        Assert.Equal(1, await CountItemRowsAsync(shelfId));
     }
 
     [Fact]
@@ -120,8 +119,8 @@ public sealed class EfInlineProjectionOwnedGraphTests(EfEventStoreFixture fixtur
         await store.AppendAsync(
             [Relabeled(shelfId, "scribbled"), Stocked(otherId, "Bruges", "z")], cancellationToken: cancellationToken);
 
-        (await ReadShelfAsync(shelfId))!.Label.Should().Be("shelf");
-        (await ReadShelfAsync(otherId)).Should().NotBeNull();
+        Assert.Equal("shelf", (await ReadShelfAsync(shelfId))!.Label);
+        Assert.NotNull(await ReadShelfAsync(otherId));
     }
 
     private EventStore NewStore(string processorId) => new(

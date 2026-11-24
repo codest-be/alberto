@@ -1,6 +1,5 @@
 using Alberto.InMemory;
 using Alberto.Postgres;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Tests;
@@ -88,8 +87,8 @@ public sealed class InMemoryVersionParityTests
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert: storage (_version:3) wins.
-        result.Single().EventType.Version.Should().Be(3,
-            "the _v tag is the source of truth on read, not EventType.Version on the input object");
+        // the _v tag is the source of truth on read, not EventType.Version on the input object
+        Assert.Equal(3, result.Single().EventType.Version);
     }
 
     [Fact]
@@ -103,8 +102,8 @@ public sealed class InMemoryVersionParityTests
 
         var streamed = await backend.StreamAllAsync(cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
-        streamed.Single().EventType.Version.Should().Be(2,
-            "the stream path must return the same version as the append result");
+        // the stream path must return the same version as the append result
+        Assert.Equal(2, streamed.Single().EventType.Version);
     }
 
     // ── agreement cases ────────────────────────────────────────────────────
@@ -122,7 +121,7 @@ public sealed class InMemoryVersionParityTests
             [evt],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        result.Single().EventType.Version.Should().Be(version);
+        Assert.Equal(version, result.Single().EventType.Version);
     }
 
     // ── legacy (no _v tag) ─────────────────────────────────────────────────
@@ -137,8 +136,8 @@ public sealed class InMemoryVersionParityTests
             [evt],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        result.Single().EventType.Version.Should().Be(1,
-            "events written before schema versioning was introduced must be treated as v1");
+        // events written before schema versioning was introduced must be treated as v1
+        Assert.Equal(1, result.Single().EventType.Version);
     }
 
     [Fact]
@@ -151,7 +150,7 @@ public sealed class InMemoryVersionParityTests
 
         var streamed = await backend.StreamAllAsync(cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
-        streamed.Single().EventType.Version.Should().Be(1);
+        Assert.Equal(1, streamed.Single().EventType.Version);
     }
 }
 
@@ -185,8 +184,8 @@ public sealed class PostgresVersionParityTests(SingleTenantPostgresFixture fixtu
             [evt],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        result.Single().EventType.Version.Should().Be(3,
-            "Postgres reconstructs version from the _v tag; the input EventType.Version is ignored on read");
+        // Postgres reconstructs version from the _v tag; the input EventType.Version is ignored on read
+        Assert.Equal(3, result.Single().EventType.Version);
     }
 
     [Fact]
@@ -200,9 +199,9 @@ public sealed class PostgresVersionParityTests(SingleTenantPostgresFixture fixtu
         var streamed = await backend.StreamAllAsync(cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         // Use the last appended event (other tests may have populated the store).
-        streamed.Should().Contain(e =>
-            e.EventType.Id == "parity-event" && e.EventType.Version == 2,
-            "the stream path must reflect the tag version, not the input object version");
+        // the stream path must reflect the tag version, not the input object version
+        Assert.Contains(streamed, e =>
+            e.EventType.Id == "parity-event" && e.EventType.Version == 2);
     }
 
     // ── agreement cases ────────────────────────────────────────────────────
@@ -219,7 +218,7 @@ public sealed class PostgresVersionParityTests(SingleTenantPostgresFixture fixtu
             [evt],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        result.Single().EventType.Version.Should().Be(version);
+        Assert.Equal(version, result.Single().EventType.Version);
     }
 
     // ── legacy (no _v tag) ─────────────────────────────────────────────────
@@ -234,8 +233,8 @@ public sealed class PostgresVersionParityTests(SingleTenantPostgresFixture fixtu
             [evt],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        result.Single().EventType.Version.Should().Be(1,
-            "events written before schema versioning was introduced must be treated as v1");
+        // events written before schema versioning was introduced must be treated as v1
+        Assert.Equal(1, result.Single().EventType.Version);
     }
 }
 
@@ -267,10 +266,10 @@ public sealed class EventVersionTagParityTests
         var fromTags = EventVersionTag.ParseFromTags(tagCollection);
         var fromRawTags = EventVersionTag.ParseFromRawTags(rawTags);
 
-        fromTags.Should().Be(version);
-        fromRawTags.Should().Be(version);
-        fromTags.Should().Be(fromRawTags,
-            "both overloads must extract the same version from equivalent inputs");
+        Assert.Equal(version, fromTags);
+        Assert.Equal(version, fromRawTags);
+        // both overloads must extract the same version from equivalent inputs
+        Assert.Equal(fromRawTags, fromTags);
     }
 
     [Fact]
@@ -282,9 +281,9 @@ public sealed class EventVersionTagParityTests
         var fromTags = EventVersionTag.ParseFromTags(emptyTagCollection);
         var fromRawTags = EventVersionTag.ParseFromRawTags(emptyRawTags);
 
-        fromTags.Should().Be(1);
-        fromRawTags.Should().Be(1);
-        fromTags.Should().Be(fromRawTags);
+        Assert.Equal(1, fromTags);
+        Assert.Equal(1, fromRawTags);
+        Assert.Equal(fromRawTags, fromTags);
     }
 
     [Fact]
@@ -299,7 +298,7 @@ public sealed class EventVersionTagParityTests
         IReadOnlyCollection<EventTag> tags = [orderTag, versionTag, customerTag];
         string[] rawTags = [orderTag.Value, versionTag.Value, customerTag.Value];
 
-        EventVersionTag.ParseFromTags(tags).Should().Be(3);
-        EventVersionTag.ParseFromRawTags(rawTags).Should().Be(3);
+        Assert.Equal(3, EventVersionTag.ParseFromTags(tags));
+        Assert.Equal(3, EventVersionTag.ParseFromRawTags(rawTags));
     }
 }

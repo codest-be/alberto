@@ -1,8 +1,6 @@
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Alberto.Postgres;
-using FluentAssertions;
-using FluentAssertions.Execution;
 using Xunit;
 
 namespace Alberto.Tests.Postgres;
@@ -59,31 +57,21 @@ public sealed class DcbConflictDetailTests
     {
         var raises = ConflictRaises().ToList();
 
-        raises.Should().HaveCountGreaterThanOrEqualTo(MinimumExpectedRaises,
-            because: "the scan must be finding the append functions' raises; a lower count means " +
-                     "the regex or the resource lookup is broken, not that the raises are gone");
+        Assert.True(raises.Count >= MinimumExpectedRaises,
+            "The migration scan must find enough conflict raises to validate the append functions.");
 
-        using var scope = new AssertionScope();
-
-        foreach (var (script, message, tail) in raises)
+        Assert.All(raises, raise =>
         {
-            // `%` is substituted by the format argument, so a raise that forgot it would produce
-            // a literal '%' where the position should be and parse as no position at all.
-            tail.Should().Contain("v_conflict_position",
-                because: $"{script} raises '{message}' — the % must be filled with the position " +
-                         "the boundary check found, or the message names no position to parse");
-
+            var (script, message, tail) = raise;
+            // A raise that omits the format argument cannot report the conflicting position.
             var rendered = message.Replace("%", "4711", StringComparison.Ordinal);
+            var parsed = PostgresBackendHelpers.ConflictMessage.TryParsePosition(rendered, out var position);
 
-            PostgresBackendHelpers.ConflictMessage.TryParsePosition(rendered, out var position)
-                .Should().BeTrue(
-                    because: $"{script} raises '{message}', which must stay in the " +
-                             "'... found at position %' shape ConflictMessage reads");
-
-            position.Should().Be(4711,
-                because: $"{script}'s message must yield the position it was raised with, not " +
-                         "some other number embedded in the text");
-        }
+            Assert.Multiple(
+                () => Assert.Contains("v_conflict_position", tail),
+                () => Assert.True(parsed, $"{script} raises '{message}', which must include a parseable position"),
+                () => Assert.Equal(4711L, position));
+        });
     }
 
     /// <summary>
@@ -93,20 +81,16 @@ public sealed class DcbConflictDetailTests
     [Fact]
     public void Every_conflict_raise_carries_a_detail_beyond_the_prefix()
     {
-        using var scope = new AssertionScope();
-
-        foreach (var (script, message, _) in ConflictRaises())
+        Assert.All(ConflictRaises(), raise =>
         {
+            var (script, message, _) = raise;
             var detail = PostgresBackendHelpers.ConflictMessage.Detail(message);
 
-            detail.Should().NotBe(message,
-                because: $"{script} raises '{message}', whose 'DCB conflict: ' prefix must be " +
-                         "stripped or the composed message says it twice");
-
-            detail.Should().NotBeNullOrWhiteSpace(
-                because: $"{script} raises '{message}' — the wording after the prefix is the " +
-                         "only place the matching arm of the boundary is named");
-        }
+            Assert.Multiple(
+                () => Assert.NotEqual(message, detail),
+                () => Assert.False(string.IsNullOrWhiteSpace(detail),
+                    $"{script} raises '{message}', which must name the matching arm of the boundary"));
+        });
     }
 
     [Theory]
@@ -120,10 +104,9 @@ public sealed class DcbConflictDetailTests
     [InlineData("DCB conflict: event matching types AND all tags found at position 3", 3L)]
     public void Parses_the_position_the_append_functions_report(string message, long expected)
     {
-        PostgresBackendHelpers.ConflictMessage.TryParsePosition(message, out var position)
-            .Should().BeTrue();
+        Assert.True(PostgresBackendHelpers.ConflictMessage.TryParsePosition(message, out var position));
 
-        position.Should().Be(expected);
+        Assert.Equal(expected, position);
     }
 
     [Theory]
@@ -137,19 +120,17 @@ public sealed class DcbConflictDetailTests
     [InlineData("DCB conflict: event type found at position -1")]
     public void Reports_no_position_rather_than_throwing_on_an_unrecognised_message(string? message)
     {
-        PostgresBackendHelpers.ConflictMessage.TryParsePosition(message, out var position)
-            .Should().BeFalse();
+        Assert.False(PostgresBackendHelpers.ConflictMessage.TryParsePosition(message, out var position));
 
-        position.Should().Be(-1,
-            because: "a caller that ignores the return value must still see the same 'unknown' " +
-                     "sentinel the lossy DcbConflictException constructor uses");
+        // a caller that ignores the return value must still see the same 'unknown' sentinel the lossy
+        // DcbConflictException constructor uses
+        Assert.Equal(-1, position);
     }
 
     [Fact]
     public void Falls_back_to_a_usable_detail_when_the_server_gave_no_message()
     {
-        PostgresBackendHelpers.ConflictMessage.Detail(null)
-            .Should().NotBeNullOrWhiteSpace();
+        Assert.False(string.IsNullOrWhiteSpace(PostgresBackendHelpers.ConflictMessage.Detail(null)));
     }
 
     // ── structured HINT field (migration 004+) ───────────────────────────────
@@ -161,10 +142,9 @@ public sealed class DcbConflictDetailTests
     [InlineData("9007199254740993", 9007199254740993L)]
     public void TryParseStructuredHint_reads_bare_integer_from_hint_field(string hint, long expected)
     {
-        PostgresBackendHelpers.ConflictMessage.TryParseStructuredHint(hint, out var position)
-            .Should().BeTrue();
+        Assert.True(PostgresBackendHelpers.ConflictMessage.TryParseStructuredHint(hint, out var position));
 
-        position.Should().Be(expected);
+        Assert.Equal(expected, position);
     }
 
     [Theory]
@@ -177,12 +157,11 @@ public sealed class DcbConflictDetailTests
     [InlineData("-1")]
     public void TryParseStructuredHint_degrades_on_absent_or_invalid_hint(string? hint)
     {
-        PostgresBackendHelpers.ConflictMessage.TryParseStructuredHint(hint, out var position)
-            .Should().BeFalse();
+        Assert.False(PostgresBackendHelpers.ConflictMessage.TryParseStructuredHint(hint, out var position));
 
-        position.Should().Be(-1,
-            because: "the same sentinel the lossy DcbConflictException constructor uses must be " +
-                     "returned so a caller that ignores the bool still sees 'unknown'");
+        // the same sentinel the lossy DcbConflictException constructor uses must be returned so a caller
+        // that ignores the bool still sees 'unknown'
+        Assert.Equal(-1, position);
     }
 
     /// <summary>
@@ -199,16 +178,13 @@ public sealed class DcbConflictDetailTests
         const string hintFromPostgres = "4711";
 
         // The structured reader understands a bare integer directly.
-        PostgresBackendHelpers.ConflictMessage.TryParseStructuredHint(hintFromPostgres, out var fromHint)
-            .Should().BeTrue("the structured path reads a bare integer from PostgresException.Hint");
-        fromHint.Should().Be(4711);
+        Assert.True(PostgresBackendHelpers.ConflictMessage.TryParseStructuredHint(hintFromPostgres, out var fromHint), "the structured path reads a bare integer from PostgresException.Hint");
+        Assert.Equal(4711, fromHint);
 
         // The prose parser requires the 'found at position ' marker in MessageText; it cannot
         // read a bare integer.  If C# ever called only TryParsePosition on a post-004 database,
         // the conflict position would silently degrade to -1.
-        PostgresBackendHelpers.ConflictMessage.TryParsePosition(hintFromPostgres, out _)
-            .Should().BeFalse(
-                "the prose parser cannot read a bare integer — the two read paths are distinct, " +
+        Assert.False(PostgresBackendHelpers.ConflictMessage.TryParsePosition(hintFromPostgres, out _), "the prose parser cannot read a bare integer — the two read paths are distinct, " +
                 "so passing integration tests with correct conflict positions proves the structured " +
                 "path is in use, not the prose fallback");
     }
@@ -242,28 +218,16 @@ public sealed class DcbConflictDetailTests
                 raises.Add((name, match.Groups["using"].Value));
         }
 
-        raises.Should().HaveCountGreaterThanOrEqualTo(MinimumExpectedRaisesFrom004,
-            because: "the scan must be finding all raise sites in migration 004+; a lower count " +
-                     "means the regex or the resource lookup is broken, not that the raises are gone");
+        Assert.True(raises.Count >= MinimumExpectedRaisesFrom004,
+            "The migration scan must find enough conflict raises in migration 004 and later.");
 
-        using var scope = new AssertionScope();
-
-        foreach (var (script, usingClause) in raises)
+        Assert.All(raises, raise =>
         {
-            // The USING clause must contain HINT so Npgsql surfaces it on
-            // PostgresException.Hint, making the position readable without prose parsing.
-            // HINT is used rather than DETAIL because Npgsql redacts Detail by default.
-            usingClause.Should().ContainEquivalentOf("HINT",
-                because: $"{script} raises a DCB conflict — migration 004+ must set HINT in " +
-                         "the USING clause so the position is readable from a structured field " +
-                         "(DETAIL is not used: Npgsql redacts it by default)");
-
-            // The HINT value must be the position variable itself, not a literal or other
-            // expression, so a future reword of the prose message cannot break the C# reader.
-            usingClause.Should().Contain("v_conflict_position",
-                because: $"{script} must set HINT = v_conflict_position::TEXT so the value " +
-                         "matches what ConflictMessage.TryParseStructuredHint expects");
-        }
+            // Npgsql exposes the position through Hint. It redacts Detail by default.
+            Assert.Multiple(
+                () => Assert.Contains("HINT", raise.Using, StringComparison.OrdinalIgnoreCase),
+                () => Assert.Contains("v_conflict_position", raise.Using));
+        });
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

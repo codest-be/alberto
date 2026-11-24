@@ -2,7 +2,6 @@ using Alberto;
 using Alberto.Configuration;
 using Alberto.Postgres;
 using Alberto.Leases;
-using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -21,7 +20,7 @@ public class PostgresDescriptorTests
             .Get("orders");
 
     private static PostgresOptions OptionsOf(AlbertoModuleDefinition definition) =>
-        definition.Backend.Should().BeOfType<PostgresBackendDescriptor>().Subject.Options;
+        Assert.IsType<PostgresBackendDescriptor>(definition.Backend).Options;
 
     [Fact]
     public void WithPostgres_declares_the_backend_without_connecting()
@@ -32,8 +31,8 @@ public class PostgresDescriptorTests
             .WithPostgres(o => o with { ConnectionString = ConnectionString, Schema = "orders" }));
 
         var options = OptionsOf(Resolve(services));
-        options.ConnectionString.Should().Be(ConnectionString);
-        options.Schema.Should().Be("orders");
+        Assert.Equal(ConnectionString, options.ConnectionString);
+        Assert.Equal("orders", options.Schema);
     }
 
     [Fact]
@@ -45,7 +44,7 @@ public class PostgresDescriptorTests
             .WithPostgres(o => o with { ConnectionString = ConnectionString })
             .WithTenancy());
 
-        Resolve(services).TenancyEnabled.Should().BeTrue();
+        Assert.True(Resolve(services).TenancyEnabled);
     }
 
     [Fact]
@@ -65,8 +64,8 @@ public class PostgresDescriptorTests
             .WithPostgres(o => o with { ConnectionString = ConnectionString, MaxPoolSize = 30 }));
 
         var options = OptionsOf(Resolve(services));
-        options.MaxPoolSize.Should().Be(77);
-        options.AutoMigrate.Should().BeFalse();
+        Assert.Equal(77, options.MaxPoolSize);
+        Assert.False(options.AutoMigrate);
     }
 
     [Fact]
@@ -76,7 +75,7 @@ public class PostgresDescriptorTests
         services.AddAlberto("orders", module => module
             .WithPostgres(o => o with { ConnectionString = ConnectionString }));
 
-        OptionsOf(Resolve(services)).EnsureDatabase.Should().BeTrue();
+        Assert.True(OptionsOf(Resolve(services)).EnsureDatabase);
 
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -90,7 +89,7 @@ public class PostgresDescriptorTests
         configured.AddAlberto("orders", module => module
             .WithPostgres(o => o with { ConnectionString = ConnectionString }));
 
-        OptionsOf(Resolve(configured)).EnsureDatabase.Should().BeFalse();
+        Assert.False(OptionsOf(Resolve(configured)).EnsureDatabase);
     }
 
     [Fact]
@@ -107,9 +106,8 @@ public class PostgresDescriptorTests
         services.AddSingleton<IConfiguration>(configuration);
         services.AddAlberto("orders", module => module.WithPostgres(o => o));
 
-        new AlbertoModuleValidator()
-            .Collect(Resolve(services))
-            .Should().NotContain(f => f.Code == "ALB1001");
+        Assert.DoesNotContain(new AlbertoModuleValidator()
+            .Collect(Resolve(services)), f => f.Code == "ALB1001");
     }
 
     [Fact]
@@ -122,9 +120,8 @@ public class PostgresDescriptorTests
         var descriptor = new PostgresBackendDescriptor(new PostgresOptions());
         var definition = new AlbertoModuleDefinition { ModuleKey = "orders", Backend = descriptor };
 
-        new AlbertoModuleValidator()
-            .Collect(definition)
-            .Should().Contain(f => f.Code == "ALB1001");
+        Assert.Contains(new AlbertoModuleValidator()
+            .Collect(definition), f => f.Code == "ALB1001");
     }
 
     [Fact]
@@ -139,9 +136,8 @@ public class PostgresDescriptorTests
         });
         var definition = new AlbertoModuleDefinition { ModuleKey = "orders", Backend = descriptor };
 
-        new AlbertoModuleValidator()
-            .Collect(definition)
-            .Should().Contain(f => f.Code == "ALB1003");
+        Assert.Contains(new AlbertoModuleValidator()
+            .Collect(definition), f => f.Code == "ALB1003");
     }
 
     // ── Finding I2 ──────────────────────────────────────────────────────────
@@ -175,8 +171,8 @@ public class PostgresDescriptorTests
         using var provider = services.BuildServiceProvider();
         var leaseManager = provider.GetRequiredKeyedService<IProcessorLeaseManager>("orders");
 
-        leaseManager.LeaseDuration.Should().Be(TimeSpan.FromMinutes(3),
-            "LeaseDuration from configuration (3 min) must supersede the code value (10 s)");
+        // LeaseDuration from configuration (3 min) must supersede the code value (10 s)
+        Assert.Equal(TimeSpan.FromMinutes(3), leaseManager.LeaseDuration);
     }
 
     [Fact]
@@ -195,8 +191,8 @@ public class PostgresDescriptorTests
 
         var act = async () => await host.StartAsync(TestContext.Current.CancellationToken);
 
-        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
-        exception.Which.Message.Should().Contain("orders");
-        exception.Which.Message.Should().Contain("migration");
+        var exception = await Assert.ThrowsAnyAsync<InvalidOperationException>(act);
+        Assert.Contains("orders", exception.Message);
+        Assert.Contains("migration", exception.Message);
     }
 }

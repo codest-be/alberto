@@ -1,6 +1,5 @@
 using Alberto.Postgres;
 using Alberto.Tests.Infrastructure;
-using FluentAssertions;
 using Npgsql;
 using Xunit;
 
@@ -65,7 +64,8 @@ public sealed class FencedCheckpointFenceTokenTests(FenceTokenSingleTenantFixtur
         cmd.Parameters.AddWithValue("processor_id", processorId);
 
         var affected = await cmd.ExecuteNonQueryAsync(Ct);
-        affected.Should().Be(1, because: "the lease being expired must exist");
+        // the lease being expired must exist
+        Assert.Equal(1, affected);
     }
 
     /// <summary>
@@ -82,25 +82,23 @@ public sealed class FencedCheckpointFenceTokenTests(FenceTokenSingleTenantFixtur
 
         // Generation 1: replica A owns the processor and gets as far as position 100.
         var first = await leases.TryAcquireAsync(consumerId, processorId, "replica-a", Ct);
-        first.Should().NotBeNull();
-        (await store.SaveIfLeaseHeldAsync(
+        Assert.NotNull(first);
+        Assert.True((await store.SaveIfLeaseHeldAsync(
             processorId, 100, consumerId, "replica-a", first!.FenceToken,
-            useProcessorLeaseFencing: true, Ct))
-            .Should().BeTrue();
+            useProcessorLeaseFencing: true, Ct)));
 
         // Generation 2: A stalls, its lease lapses, B takes over and makes progress.
         await ExpireLeaseAsync(consumerId, processorId);
         var second = await leases.TryAcquireAsync(consumerId, processorId, "replica-b", Ct);
-        second.Should().NotBeNull();
-        (await store.SaveIfLeaseHeldAsync(
+        Assert.NotNull(second);
+        Assert.True((await store.SaveIfLeaseHeldAsync(
             processorId, 200, consumerId, "replica-b", second!.FenceToken,
-            useProcessorLeaseFencing: true, Ct))
-            .Should().BeTrue();
+            useProcessorLeaseFencing: true, Ct)));
 
         // Generation 3: B goes away in turn and A picks the processor back up.
         await ExpireLeaseAsync(consumerId, processorId);
         var third = await leases.TryAcquireAsync(consumerId, processorId, "replica-a", Ct);
-        third.Should().NotBeNull();
+        Assert.NotNull(third);
 
         // A's flush from generation 1 finally lands. Replica identity matches and the lease is
         // live, so identity-only fencing lets it through — and GREATEST would carry the
@@ -109,9 +107,8 @@ public sealed class FencedCheckpointFenceTokenTests(FenceTokenSingleTenantFixtur
             processorId, 500, consumerId, "replica-a", first.FenceToken,
             useProcessorLeaseFencing: true, Ct);
 
-        stale.Should().BeFalse(
-            because: "generation 1 was superseded the moment replica B acquired the lease");
-        (await store.GetAsync(processorId, Ct)).Should().Be(200);
+        Assert.False(stale, "generation 1 was superseded the moment replica B acquired the lease");
+        Assert.Equal(200, await store.GetAsync(processorId, Ct));
     }
 
     [Fact]
@@ -123,14 +120,14 @@ public sealed class FencedCheckpointFenceTokenTests(FenceTokenSingleTenantFixtur
         var processorId = $"processor-{Guid.NewGuid():N}";
 
         var lease = await leases.TryAcquireAsync(consumerId, processorId, "replica-a", Ct);
-        lease.Should().NotBeNull();
+        Assert.NotNull(lease);
 
         var saved = await store.SaveIfLeaseHeldAsync(
             processorId, 42, consumerId, "replica-a", lease!.FenceToken,
             useProcessorLeaseFencing: true, Ct);
 
-        saved.Should().BeTrue();
-        (await store.GetAsync(processorId, Ct)).Should().Be(42);
+        Assert.True(saved);
+        Assert.Equal(42, await store.GetAsync(processorId, Ct));
     }
 
     [Fact]
@@ -142,14 +139,14 @@ public sealed class FencedCheckpointFenceTokenTests(FenceTokenSingleTenantFixtur
         var processorId = $"processor-{Guid.NewGuid():N}";
 
         var lease = await leases.TryAcquireAsync(consumerId, processorId, "replica-a", Ct);
-        lease.Should().NotBeNull();
+        Assert.NotNull(lease);
 
         var saved = await store.SaveIfLeaseHeldAsync(
             processorId, 42, consumerId, "replica-b", lease!.FenceToken,
             useProcessorLeaseFencing: true, Ct);
 
-        saved.Should().BeFalse();
-        (await store.GetAsync(processorId, Ct)).Should().BeNull();
+        Assert.False(saved);
+        Assert.Null((await store.GetAsync(processorId, Ct)));
     }
 
     [Fact]
@@ -161,14 +158,14 @@ public sealed class FencedCheckpointFenceTokenTests(FenceTokenSingleTenantFixtur
         var processorId = $"processor-{Guid.NewGuid():N}";
 
         var lease = await leases.TryAcquireAsync(consumerId, processorId, "replica-a", Ct);
-        lease.Should().NotBeNull();
+        Assert.NotNull(lease);
         await ExpireLeaseAsync(consumerId, processorId);
 
         var saved = await store.SaveIfLeaseHeldAsync(
             processorId, 42, consumerId, "replica-a", lease!.FenceToken,
             useProcessorLeaseFencing: true, Ct);
 
-        saved.Should().BeFalse();
+        Assert.False(saved);
     }
 
     /// <summary>
@@ -184,15 +181,14 @@ public sealed class FencedCheckpointFenceTokenTests(FenceTokenSingleTenantFixtur
         var processorId = $"processor-{Guid.NewGuid():N}";
 
         var lease = await leases.TryAcquireAsync(consumerId, processorId, "replica-a", Ct);
-        lease.Should().NotBeNull();
+        Assert.NotNull(lease);
 
         var renewed = await leases.RenewLeasesAsync(consumerId, "replica-a", Ct);
-        renewed.Should().Contain(processorId);
+        Assert.Contains(processorId, renewed);
 
-        (await store.SaveIfLeaseHeldAsync(
+        Assert.True((await store.SaveIfLeaseHeldAsync(
             processorId, 7, consumerId, "replica-a", lease!.FenceToken,
-            useProcessorLeaseFencing: true, Ct))
-            .Should().BeTrue(because: "a renewal is the same ownership, not a new one");
+            useProcessorLeaseFencing: true, Ct)), "a renewal is the same ownership, not a new one");
     }
 
     [Fact]
@@ -206,9 +202,9 @@ public sealed class FencedCheckpointFenceTokenTests(FenceTokenSingleTenantFixtur
         await ExpireLeaseAsync(consumerId, processorId);
         var second = await leases.TryAcquireAsync(consumerId, processorId, "replica-b", Ct);
 
-        first.Should().NotBeNull();
-        second.Should().NotBeNull();
-        second!.FenceToken.Should().BeGreaterThan(first!.FenceToken);
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.True(second!.FenceToken > first!.FenceToken);
     }
 
     /// <summary>
@@ -226,9 +222,9 @@ public sealed class FencedCheckpointFenceTokenTests(FenceTokenSingleTenantFixtur
         await leases.ReleaseAllLeasesAsync(consumerId, "replica-a", Ct);
         var second = await leases.TryAcquireAsync(consumerId, processorId, "replica-b", Ct);
 
-        first.Should().NotBeNull();
-        second.Should().NotBeNull();
-        second!.FenceToken.Should().BeGreaterThan(first!.FenceToken);
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.True(second!.FenceToken > first!.FenceToken);
     }
 }
 
@@ -253,13 +249,13 @@ public sealed class FencedCheckpointMultiTenantParityTests(FenceTokenMultiTenant
         var processorId = $"processor-{Guid.NewGuid():N}";
 
         var lease = await leases.TryAcquireAsync(consumerId, processorId, "replica-a", Ct);
-        lease.Should().NotBeNull();
+        Assert.NotNull(lease);
 
         var saved = await store.SaveIfLeaseHeldAsync(
             processorId, 99, consumerId, "replica-a", lease!.FenceToken,
             useProcessorLeaseFencing: true, Ct);
 
-        saved.Should().BeTrue();
-        (await store.GetAsync(processorId, Ct)).Should().Be(99);
+        Assert.True(saved);
+        Assert.Equal(99, await store.GetAsync(processorId, Ct));
     }
 }

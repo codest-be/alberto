@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using Alberto.Postgres;
 using Alberto.Tests.Infrastructure;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -33,9 +32,9 @@ public sealed class MigrationLeastPrivilegeTests(PostgresCluster cluster)
         var result = PostgresMigrator.Migrate(
             database, new MigrationOptions { Schema = "logged", SingleTenant = true, Logger = logger });
 
-        result.Successful.Should().BeTrue(because: result.Error?.Message);
-        logger.Messages.Should().Contain(m => m.Contains("Executing Database Server script"),
-            because: "DbUp's progress must reach the host's logging, not the console");
+        Assert.True(result.Successful, result.Error?.Message);
+        // DbUp's progress must reach the host's logging, not the console
+        Assert.Contains(logger.Messages, m => m.Contains("Executing Database Server script"));
     }
 
     [Fact]
@@ -48,8 +47,8 @@ public sealed class MigrationLeastPrivilegeTests(PostgresCluster cluster)
         var result = PostgresCatalogMigrator.Migrate(
             database, new MigrationOptions { Schema = "catalog_logged", Logger = logger });
 
-        result.Successful.Should().BeTrue(because: result.Error?.Message);
-        logger.Messages.Should().Contain(m => m.Contains("Executing Database Server script"));
+        Assert.True(result.Successful, result.Error?.Message);
+        Assert.Contains(logger.Messages, m => m.Contains("Executing Database Server script"));
     }
 
     [Fact]
@@ -62,15 +61,15 @@ public sealed class MigrationLeastPrivilegeTests(PostgresCluster cluster)
             restricted, new MigrationOptions { Schema = "least_privilege", SingleTenant = true });
 
         // Proves the setup: without the option the role is refused at the maintenance database.
-        withEnsure.Should().Throw<PostgresException>()
-            .Which.SqlState.Should().Be(PostgresErrorCodes.InsufficientPrivilege);
+        var exception = Assert.ThrowsAny<PostgresException>(withEnsure);
+        Assert.Equal(PostgresErrorCodes.InsufficientPrivilege, exception.SqlState);
 
         var result = PostgresMigrator.Migrate(
             restricted,
             new MigrationOptions { Schema = "least_privilege", SingleTenant = true, EnsureDatabase = false });
 
-        result.Successful.Should().BeTrue(because: result.Error?.Message);
-        result.ExecutedScripts.Should().NotBeEmpty();
+        Assert.True(result.Successful, result.Error?.Message);
+        Assert.NotEmpty(result.ExecutedScripts);
     }
 
     [Fact]
@@ -97,7 +96,7 @@ public sealed class MigrationLeastPrivilegeTests(PostgresCluster cluster)
         await host.StartAsync(cancellationToken);
         await host.StopAsync(cancellationToken);
 
-        logs.Messages.Should().Contain(m => m.Contains("Executing Database Server script"));
+        Assert.Contains(logs.Messages, m => m.Contains("Executing Database Server script"));
     }
 
     /// <summary>

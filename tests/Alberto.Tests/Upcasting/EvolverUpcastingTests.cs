@@ -1,7 +1,6 @@
 using Alberto.Commands;
 using Alberto.InMemory;
 using Alberto.Upcasting;
-using FluentAssertions;
 using Xunit;
 using Alberto.Results;
 
@@ -110,10 +109,9 @@ public sealed class EvolverUpcastingCommandPathTests
             .Commit(CancellationToken.None);
 
         // Assert: the evolver received the UPCASTED shape, not the raw v1 JSON.
-        result.IsSuccess.Should().BeTrue();
-        observedRegion.Should().Be(
-            "upcasted-region",
-            "the upcaster chain must run on the command path before the evolver handler sees the event");
+        Assert.True(result.IsSuccess);
+        // the upcaster chain must run on the command path before the evolver handler sees the event
+        Assert.Equal("upcasted-region", observedRegion);
     }
 
     [Fact]
@@ -152,8 +150,8 @@ public sealed class EvolverUpcastingCommandPathTests
             })
             .Commit(CancellationToken.None);
 
-        result.IsSuccess.Should().BeTrue();
-        observedRegion.Should().Be("original-region");
+        Assert.True(result.IsSuccess);
+        Assert.Equal("original-region", observedRegion);
     }
 }
 
@@ -209,12 +207,10 @@ public sealed class EvolverTypeMismatchTests
                 .Decide((_, _) => Decision.Succeed())
                 .Commit(CancellationToken.None));
 
-        ex.Message.Should().Contain(
-            nameof(UpcastEvolverWrongType),
-            "the error must identify the type the upcaster actually returned");
-        ex.Message.Should().Contain(
-            nameof(UpcastEvolverOrderV2),
-            "the error must identify the type the handler expected");
+        // the error must identify the type the upcaster actually returned
+        Assert.Contains(nameof(UpcastEvolverWrongType), ex.Message);
+        // the error must identify the type the handler expected
+        Assert.Contains(nameof(UpcastEvolverOrderV2), ex.Message);
     }
 }
 
@@ -275,8 +271,8 @@ public sealed class PipelineUpcasterTests
             .Commit(TestContext.Current.CancellationToken);
 
         // Assert: upcasted shape reached the evolver.
-        result.IsSuccess.Should().BeTrue();
-        observedRegion.Should().Be("ext-upcasted");
+        Assert.True(result.IsSuccess);
+        Assert.Equal("ext-upcasted", observedRegion);
     }
 }
 
@@ -310,8 +306,8 @@ public sealed class EvolverPublicApiBackwardsCompatTests
 
         var state = evolver.Reconstitute(envelopes);
 
-        state.LastRegion.Should().Be("direct-region",
-            "the public overload must still deserialize via raw JSON when called without a serializer");
+        // the public overload must still deserialize via raw JSON when called without a serializer
+        Assert.Equal("direct-region", state.LastRegion);
     }
 
     private static IEventEnvelope MakeEnvelope(string slug, int version, string json)
